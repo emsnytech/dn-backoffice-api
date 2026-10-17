@@ -18,7 +18,10 @@ export function StateBadge({ state }: { state: string }) {
 export const EVENTS: Record<string, string> = {
   depose: "Déposé",
   passe_en_construction: "Repassé en construction",
+  repasse_en_construction: "Repassé en construction",
   passe_en_instruction: "Passé en instruction",
+  passe_en_instruction_automatiquement: "Passé en instruction automatiquement",
+  repasse_en_instruction: "Repassé en instruction",
   accepte: "Accepté",
   accepte_automatiquement: "Accepté automatiquement",
   refuse: "Refusé",

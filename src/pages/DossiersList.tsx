@@ -4,6 +4,7 @@ import { Alert } from "@codegouvfr/react-dsfr/Alert";
 import { Select } from "@codegouvfr/react-dsfr/Select";
 import { Table } from "@codegouvfr/react-dsfr/Table";
 import { useApi } from "../api.ts";
+import { RefreshButton } from "../RefreshButton.tsx";
 import { STATES, StateBadge, demandeurName, formatDate } from "../format.tsx";
 
 export function DossiersList() {
@@ -31,7 +32,8 @@ export function DossiersList() {
         ))}
       </Select>
 
-      {dossiers.loading && <p>Chargement des dossiers…</p>}
+      <RefreshButton onClick={dossiers.reload} loading={dossiers.loading} loadedAt={dossiers.loadedAt} />
+      {dossiers.loading && !dossiers.data && <p>Chargement des dossiers…</p>}
       {dossiers.error && <Alert severity="error" title="Impossible de charger les dossiers" description={dossiers.error} small />}
       {dossiers.data && dossiers.data.length === 0 && <p>Aucun dossier{state && " dans cet état"}.</p>}
       {dossiers.data && dossiers.data.length > 0 && (

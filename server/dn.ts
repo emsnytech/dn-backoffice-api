@@ -1,5 +1,6 @@
-// Client minimal de l'API GraphQL Démarche Numérique (lecture seule).
-// Le jeton est lu ici, côté serveur uniquement.
+// Client minimal de l'API GraphQL Démarche Numérique.
+// Le jeton est lu ici, côté serveur uniquement. Seule écriture : changeDossierState.
+import { MOTIVATION_ALLOWED, MOTIVATION_REQUIRED, TRANSITIONS, type DossierState } from "../shared/transitions.ts";
 
 const API_URL = process.env.DN_API_URL ?? "https://demarche.numerique.gouv.fr/api/v2/graphql";
 const TOKEN = process.env.DN_API_TOKEN;
@@ -38,6 +39,7 @@ const CHAMP = `
   fragment ChampFields on Champ {
     __typename id champDescriptorId label stringValue
     ... on MultipleDropDownListChamp { values }
+    ... on CarteChamp { geoAreas { id source description geometry { type } } }
   }`;
 
 const DOSSIER_SUMMARY = `
@@ -114,6 +116,74 @@ export async function fetchDossiers() {
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
   } while (after);
   return dossiers;
+}
+
+// --- Écriture : changements d'état -----------------------------------------
+
+const INSTRUCTEURS_QUERY = `
+  query getInstructeurs($number: Int!) {
+    demarche(number: $number) {
+      groupeInstructeurs { label instructeurs { id email } }
+    }
+  }`;
+
+let instructeurId: string | undefined;
+
+// Instructeur au nom duquel les mutations sont faites : DN_INSTRUCTEUR_EMAIL si défini,
+// sinon l'unique instructeur de la démarche.
+async function getInstructeurId() {
+  if (instructeurId) return instructeurId;
+  const data: any = await gql(INSTRUCTEURS_QUERY, { number: DEMARCHE_NUMBER });
+  const all = new Map<string, { id: string; email: string }>();
+  for (const g of data.demarche.groupeInstructeurs) for (const i of g.instructeurs) all.set(i.id, i);
+  const wanted = process.env.DN_INSTRUCTEUR_EMAIL;
+  const candidates = [...all.values()].filter((i) => !wanted || i.email === wanted);
+  if (candidates.length !== 1) {
+    throw new Error(
+      wanted
+        ? `Instructeur ${wanted} introuvable sur la démarche`
+        : `${candidates.length} instructeurs sur la démarche : définir DN_INSTRUCTEUR_EMAIL dans .env`,
+    );
+  }
+  return (instructeurId = candidates[0].id);
+}
+
+export class TransitionError extends Error {}
+
+export async function changeDossierState(
+  number: number,
+  target: string,
+  options: { motivation?: string; disableNotification?: boolean },
+) {
+  // Toujours repartir de l'état réel côté API, pas de celui affiché dans le navigateur.
+  const dossier = await fetchDossier(number);
+  if (!dossier) throw new TransitionError("Dossier introuvable");
+  const mutation = TRANSITIONS[dossier.state as DossierState]?.[target as DossierState];
+  if (!mutation) throw new TransitionError(`Passage de « ${dossier.state} » à « ${target} » impossible`);
+  const motivation = options.motivation?.trim();
+  if (MOTIVATION_REQUIRED.has(target as DossierState) && !motivation) {
+    throw new TransitionError("Une motivation est obligatoire pour ce changement d'état");
+  }
+
+  const input: Record<string, unknown> = {
+    dossierId: dossier.id,
+    instructeurId: await getInstructeurId(),
+    disableNotification: Boolean(options.disableNotification),
+  };
+  if (MOTIVATION_ALLOWED.has(target as DossierState) && motivation) input.motivation = motivation;
+
+  const query = `
+    mutation change($input: ${mutation[0].toUpperCase()}${mutation.slice(1)}Input!) {
+      ${mutation}(input: $input) {
+        dossier { ...DossierSummary }
+        errors { message }
+      }
+    }
+    ${DOSSIER_SUMMARY}`;
+  const data: any = await gql(query, { input });
+  const result = data[mutation];
+  if (result.errors?.length) throw new TransitionError(result.errors.map((e: any) => e.message).join(" ; "));
+  return result.dossier;
 }
 
 // Renvoie null si le dossier n'appartient pas à la démarche configurée.

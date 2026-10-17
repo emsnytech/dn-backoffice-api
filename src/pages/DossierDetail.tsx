@@ -7,6 +7,24 @@ import { EVENTS, StateBadge, demandeurName, formatDate } from "../format.tsx";
 // Types de champs sans valeur saisie : affichés comme structure, pas comme réponse.
 const LAYOUT_TYPES = new Set(["HeaderSectionChampDescriptor", "ExplicationChampDescriptor"]);
 
+const GEO_SOURCES: Record<string, string> = {
+  selection_utilisateur: "Tracé",
+  cadastre: "Parcelle cadastrale",
+};
+
+function GeoAreas({ areas }: { areas: any[] }) {
+  if (!areas.length) return null;
+  return (
+    <ul className="fr-mb-0">
+      {areas.map((a) => (
+        <li key={a.id}>
+          {GEO_SOURCES[a.source] ?? a.source} ({a.geometry.type}){a.description && ` : ${a.description}`}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Champs({ champs, descriptors }: { champs: any[]; descriptors: any[] }) {
   const typeById = new Map(descriptors.map((d) => [d.id, d.__typename]));
   return (
@@ -15,7 +33,7 @@ function Champs({ champs, descriptors }: { champs: any[]; descriptors: any[] }) 
         const type = typeById.get(c.champDescriptorId);
         if (type === "HeaderSectionChampDescriptor") return <h3 key={c.id} className="fr-h5 fr-mt-4w">{c.label}</h3>;
         if (LAYOUT_TYPES.has(type)) return null;
-        const value = c.values ? c.values.join(", ") : c.stringValue;
+        const value = c.geoAreas ? <GeoAreas areas={c.geoAreas} /> : c.values ? c.values.join(", ") : c.stringValue;
         return (
           <div key={c.id} className="fr-mb-2w">
             <dt className="fr-text--bold fr-mb-0">{c.label}</dt>

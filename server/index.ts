@@ -1,7 +1,7 @@
-// Serveur intermédiaire : seul à détenir le jeton, n'expose que des routes en lecture.
+// Serveur intermédiaire : seul à détenir le jeton. Lecture, plus une route de changement d'état.
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { fetchDemarche, fetchDossier, fetchDossiers } from "./dn.ts";
+import { TransitionError, changeDossierState, fetchDemarche, fetchDossier, fetchDossiers } from "./dn.ts";
 
 const app = new Hono().basePath("/api");
 
@@ -21,6 +21,23 @@ app.get("/dossiers", async (c) => {
 app.get("/dossiers/:number{[0-9]+}", async (c) => {
   const dossier = await fetchDossier(Number(c.req.param("number")));
   return dossier ? c.json(dossier) : c.json({ error: "Dossier introuvable" }, 404);
+});
+
+// Seule route d'écriture. Le Content-Type JSON imposé empêche qu'un autre site
+// déclenche cette route depuis le navigateur (requête « simple » sans preflight).
+app.post("/dossiers/:number{[0-9]+}/state", async (c) => {
+  if (!c.req.header("content-type")?.startsWith("application/json")) {
+    return c.json({ error: "Content-Type application/json attendu" }, 415);
+  }
+  const { state, motivation, disableNotification } = await c.req.json();
+  try {
+    const dossier = await changeDossierState(Number(c.req.param("number")), state, { motivation, disableNotification });
+    console.log(`Dossier ${dossier.number} → ${dossier.state}`);
+    return c.json(dossier);
+  } catch (e) {
+    if (e instanceof TransitionError) return c.json({ error: e.message }, 422);
+    throw e;
+  }
 });
 
 const port = Number(process.env.PORT ?? 8787);

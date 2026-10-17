@@ -1,10 +1,12 @@
-import { Routes, Route } from "react-router";
+import { Routes, Route, useLocation } from "react-router";
 import { Header } from "@codegouvfr/react-dsfr/Header";
 import { Footer } from "@codegouvfr/react-dsfr/Footer";
+import { Kanban } from "./pages/Kanban.tsx";
 import { DossiersList } from "./pages/DossiersList.tsx";
 import { DossierDetail } from "./pages/DossierDetail.tsx";
 
 export function App() {
+  const { pathname } = useLocation();
   return (
     <>
       <Header
@@ -12,10 +14,15 @@ export function App() {
         serviceTitle="Back office"
         serviceTagline="Instruction des dossiers Démarche Numérique"
         homeLinkProps={{ to: "/", title: "Accueil – Back office" }}
+        navigation={[
+          { text: "Tableau d'instruction", linkProps: { to: "/" }, isActive: pathname === "/" },
+          { text: "Liste des dossiers", linkProps: { to: "/liste" }, isActive: pathname === "/liste" },
+        ]}
       />
-      <main className="fr-container fr-py-6w" style={{ minHeight: "60vh" }}>
+      <main className="fr-container--fluid fr-px-4w fr-py-6w" style={{ minHeight: "60vh" }}>
         <Routes>
-          <Route path="/" element={<DossiersList />} />
+          <Route path="/" element={<Kanban />} />
+          <Route path="/liste" element={<DossiersList />} />
           <Route path="/dossiers/:number" element={<DossierDetail />} />
         </Routes>
       </main>

@@ -7,11 +7,12 @@ de test est configurée.
 
 ## Objectif
 
-1. **Étape 1 (en cours)** : un script lit la démarche, son descriptif de champs
+1. **Étape 1 (faite)** : un script lit la démarche, son descriptif de champs
    (`champDescriptors`, `annotationDescriptors`) et la liste de ses dossiers.
    On vérifie que ces données sont lues correctement.
-2. **Étape 2** : une interface web d'instruction (liste, filtres, détail d'un
-   dossier). On ne la commence qu'une fois l'étape 1 validée.
+2. **Étape 2 (faite)** : une interface web en lecture (liste, filtres, détail d'un dossier).
+3. **Étape 3 (en test)** : un tableau kanban d'instruction. On fait glisser un dossier
+   d'une colonne à l'autre pour changer son état dans Démarche Numérique.
 
 ## Stack
 
@@ -28,6 +29,7 @@ de test est configurée.
 | `DN_DEMARCHE_NUMBER` | Numéro de la démarche                                   |
 | `DN_API_TOKEN`       | Jeton d'API (profil instructeur/administrateur)         |
 | `DN_API_URL`         | Optionnel, par défaut `https://demarche.numerique.gouv.fr/api/v2/graphql` |
+| `DN_INSTRUCTEUR_EMAIL` | Optionnel. Instructeur au nom duquel les changements d'état sont faits (par défaut, l'unique instructeur de la démarche) |
 
 Authentification : en-tête `Authorization: Bearer <DN_API_TOKEN>`.
 
@@ -51,8 +53,11 @@ ses changements au lieu de les appliquer directement sur les données ou sur l'A
 - Un hook `pre-commit` (`.githooks/`, activé par `npm install`) bloque tout commit
   contenant un `.env`, un fichier de `data/` ou la valeur du jeton. Ne jamais le
   contourner (`--no-verify`).
-- **Lecture seule par défaut.** Aucune mutation GraphQL (changement d'état,
-  annotation, message) sans demande explicite de l'utilisateur.
+- **Écritures limitées.** La seule mutation autorisée est le changement d'état
+  (`changeDossierState` dans `server/dn.ts`). Les transitions permises sont dans
+  `shared/transitions.ts`, et le serveur les vérifie à partir de l'état réel du dossier.
+  L'interface demande toujours une confirmation. Toute autre mutation (annotation,
+  message…) demande l'accord explicite de l'utilisateur.
 - Les réponses brutes de l'API vont dans `data/` (ignoré par git). Ce sont des
   données personnelles d'usagers : ne pas les publier.
 - Pagination des dossiers : `first` / `after` avec `pageInfo { hasNextPage endCursor }`.
@@ -61,9 +66,12 @@ ses changements au lieu de les appliquer directement sur les données ou sur l'A
 ## Organisation
 
 - `server/dn.ts` : client GraphQL (seul fichier qui lit le jeton) et requêtes.
-- `server/index.ts` : serveur Hono sur `127.0.0.1:8787`, routes en lecture seule
-  `GET /api/demarche`, `GET /api/dossiers?state=`, `GET /api/dossiers/:number`.
+- `server/index.ts` : serveur Hono sur `127.0.0.1:8787` : `GET /api/demarche`,
+  `GET /api/dossiers?state=`, `GET /api/dossiers/:number` et
+  `POST /api/dossiers/:number/state` (JSON obligatoire).
 - `src/` : front React + DSFR. Vite (port 5173) transmet `/api` au serveur Hono.
+  Pages : kanban (`/`), liste (`/liste`), détail (`/dossiers/:number`).
+- `shared/transitions.ts` : transitions d'état autorisées, partagées entre le serveur et le front.
 - `scripts/fetch-demarche.ts` : enregistre les données brutes dans `data/`.
 - `public/dsfr/` : copié par le `postinstall` de react-dsfr, ignoré par git.
 
