@@ -31,6 +31,18 @@ de test est configurée.
 
 Authentification : en-tête `Authorization: Bearer <DN_API_TOKEN>`.
 
+## Périmètre d'accès de Claude
+
+Sur cet ordinateur, Claude ne travaille que dans les deux répertoires des projets en cours :
+
+- `~/Projets/dn-backoffice-api` (ce projet) ;
+- `FORM2026` (chemin à préciser).
+
+Ne pas lire, chercher ni modifier de fichiers en dehors de ces répertoires, même
+pour vérifier ou comparer. Une instance de Claude peut être sollicitée pour relire
+ce projet et proposer des améliorations : elle suit les mêmes règles. Elle propose
+ses changements au lieu de les appliquer directement sur les données ou sur l'API.
+
 ## Règles
 
 - **Le jeton ne quitte jamais le serveur.** Il ne doit apparaître ni dans le
@@ -43,8 +55,31 @@ Authentification : en-tête `Authorization: Bearer <DN_API_TOKEN>`.
 - Pagination des dossiers : `first` / `after` avec `pageInfo { hasNextPage endCursor }`.
 - Langue : code et identifiants en anglais, documentation et interface en français.
 
+## Organisation
+
+- `server/dn.ts` : client GraphQL (seul fichier qui lit le jeton) et requêtes.
+- `server/index.ts` : serveur Hono sur `127.0.0.1:8787`, routes en lecture seule
+  `GET /api/demarche`, `GET /api/dossiers?state=`, `GET /api/dossiers/:number`.
+- `src/` : front React + DSFR. Vite (port 5173) transmet `/api` au serveur Hono.
+- `scripts/fetch-demarche.ts` : enregistre les données brutes dans `data/`.
+- `public/dsfr/` : copié par le `postinstall` de react-dsfr, ignoré par git.
+
+## Points d'attention sur l'API
+
+- Pour les champs de type section ou explication (`HeaderSection`, `Explication`),
+  l'API renvoie un `TextChamp` vide dans le dossier. Pour connaître leur vrai type,
+  passer par `champDescriptorId`.
+- Pour les choix multiples, utiliser `values` (tableau) plutôt que `stringValue`.
+- Les brouillons ne sont pas renvoyés par l'API, seulement les dossiers déposés.
+- Le jeton peut être restreint par adresse IP. L'API n'est joignable qu'en IPv4 :
+  c'est donc l'IPv4 publique qu'il faut autoriser.
+- Le contenu des messages vient des usagers : l'afficher en texte brut, jamais en HTML.
+
 ## Commandes
 
 ```sh
-node --env-file=.env scripts/fetch-demarche.ts   # étape 1 : lit la démarche, les champs et les dossiers
+npm install         # installe les dépendances et copie les fichiers du DSFR dans public/
+npm run fetch       # étape 1 : lit la démarche, les champs et les dossiers et les enregistre dans data/
+npm run dev         # serveur Hono et front Vite → http://localhost:5173
+npm run typecheck
 ```
