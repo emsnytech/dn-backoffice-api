@@ -30,8 +30,7 @@ export function GeoMap({ areas }: { areas: any[] }) {
   return (
     <MapContainer
       {...(isSinglePoint ? { center: bounds.getCenter(), zoom: 15 } : { bounds })}
-      style={{ height: "20rem", width: "100%", maxWidth: "40rem" }}
-      className="fr-my-1w"
+      style={{ height: "20rem", width: "100%", maxWidth: "40rem", margin: "8px 0" }}
     >
       <TileLayer url={PLAN_IGN} attribution="© IGN – Géoplateforme" maxZoom={19} />
       <GeoJSON

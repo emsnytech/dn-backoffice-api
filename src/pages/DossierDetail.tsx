@@ -1,6 +1,6 @@
-import { useParams } from "react-router";
-import { Alert } from "@codegouvfr/react-dsfr/Alert";
-import { Breadcrumb } from "@codegouvfr/react-dsfr/Breadcrumb";
+// Fiche dossier provisoire, en lecture seule. Elle sera remplacée par le panneau
+// latéral de l'étape 2 (docs/SPEC-kanban.md § 5).
+import { Link, useParams } from "react-router";
 import { useApi } from "../api.ts";
 import { GeoMap } from "../GeoMap.tsx";
 import { EVENTS, StateBadge, demandeurName, formatDate } from "../format.tsx";
@@ -18,7 +18,7 @@ function GeoAreas({ areas }: { areas: any[] }) {
   return (
     <>
       <GeoMap areas={areas} />
-      <ul className="fr-mb-0">
+      <ul>
         {areas.map((a) => (
           <li key={a.id}>
             {GEO_SOURCES[a.source] ?? a.source} ({a.geometry.type}){a.description && ` : ${a.description}`}
@@ -31,22 +31,23 @@ function GeoAreas({ areas }: { areas: any[] }) {
 
 function Champs({ champs, descriptors }: { champs: any[]; descriptors: any[] }) {
   const typeById = new Map(descriptors.map((d) => [d.id, d.__typename]));
-  return (
-    <dl>
-      {champs.map((c) => {
-        const type = typeById.get(c.champDescriptorId);
-        if (type === "HeaderSectionChampDescriptor") return <h3 key={c.id} className="fr-h5 fr-mt-4w">{c.label}</h3>;
-        if (LAYOUT_TYPES.has(type)) return null;
-        const value = c.geoAreas ? <GeoAreas areas={c.geoAreas} /> : c.values ? c.values.join(", ") : c.stringValue;
-        return (
-          <div key={c.id} className="fr-mb-2w">
-            <dt className="fr-text--bold fr-mb-0">{c.label}</dt>
-            <dd className="fr-ml-0">{value || <em className="fr-text-mention--grey">Non renseigné</em>}</dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
+  const rows = [];
+  for (const c of champs) {
+    const type = typeById.get(c.champDescriptorId);
+    if (type === "HeaderSectionChampDescriptor") {
+      rows.push(<h3 key={c.id} style={{ gridColumn: "1 / -1" }}>{c.label}</h3>);
+      continue;
+    }
+    if (LAYOUT_TYPES.has(type)) continue;
+    const value = c.geoAreas ? <GeoAreas areas={c.geoAreas} /> : c.values ? c.values.join(", ") : c.stringValue;
+    rows.push(
+      <div key={c.id} style={{ display: "contents" }}>
+        <dt>{c.label}</dt>
+        <dd>{value || <em className="muted">Non renseigné</em>}</dd>
+      </div>,
+    );
+  }
+  return <dl className="fields panel">{rows}</dl>;
 }
 
 export function DossierDetail() {
@@ -57,33 +58,36 @@ export function DossierDetail() {
   const rev = demarche.data?.activeRevision;
 
   return (
-    <>
-      <Breadcrumb
-        currentPageLabel={`Dossier n° ${number}`}
-        homeLinkProps={{ to: "/" }}
-        segments={[]}
-      />
-      {(dossier.loading || demarche.loading) && <p>Chargement du dossier…</p>}
-      {dossier.error && <Alert severity="error" title="Impossible de charger le dossier" description={dossier.error} small />}
+    <main className="page">
+      <Link to="/" className="back">← Retour au tableau</Link>
+      {(dossier.loading || demarche.loading) && !d && <p>Chargement du dossier…</p>}
+      {dossier.error && <p className="notice" role="alert" style={{ margin: 0 }}>Impossible de charger le dossier : {dossier.error}</p>}
       {d && rev && (
         <>
-          <h1 className="fr-mb-1w">Dossier n° {d.number}</h1>
-          <div className="fr-mb-2w"><StateBadge state={d.state} /></div>
-          <ul className="fr-text--sm">
-            <li>Demandeur : {demandeurName(d)} ({d.usager.email})</li>
-            <li>Groupe instructeur : {d.groupeInstructeur.label}</li>
-            <li>Déposé le {formatDate(d.dateDepot)}, modifié le {formatDate(d.dateDerniereModification)}</li>
-            {d.dateTraitement && <li>Traité le {formatDate(d.dateTraitement)}</li>}
-          </ul>
-          {d.motivation && <Alert severity="info" title="Motivation" description={d.motivation} small className="fr-mb-4w" />}
+          <p className="mono" style={{ margin: "8px 0 0", color: "var(--color-accent)" }}>N° {d.number}</p>
+          <h1>{demandeurName(d)}</h1>
+          <StateBadge state={d.state} />
+          <p className="muted">
+            Déposé le {formatDate(d.dateDepot)} · modifié le {formatDate(d.dateDerniereModification)}
+            {d.dateTraitement && ` · traité le ${formatDate(d.dateTraitement)}`} · groupe {d.groupeInstructeur.label}
+          </p>
+          {d.motivation && <p className="panel"><strong>Motivation :</strong> {d.motivation}</p>}
 
           <h2>Formulaire</h2>
           <Champs champs={d.champs} descriptors={rev.champDescriptors} />
 
-          <h2 className="fr-mt-6w">Annotations privées</h2>
-          {d.annotations.length ? <Champs champs={d.annotations} descriptors={rev.annotationDescriptors} /> : <p>Aucune annotation.</p>}
+          <h2>Annotations privées</h2>
+          {d.annotations.length ? <Champs champs={d.annotations} descriptors={rev.annotationDescriptors} /> : <p className="muted">Aucune annotation.</p>}
 
-          <h2 className="fr-mt-6w">Historique</h2>
+          <h2>Messagerie · {d.messages.length}</h2>
+          {d.messages.map((m: any) => (
+            <div key={m.id} className="message">
+              <p className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{m.email} — {formatDate(m.createdAt)}</p>
+              <p style={{ whiteSpace: "pre-line" }}>{m.body}</p>
+            </div>
+          ))}
+
+          <h2>Historique</h2>
           <ul>
             {d.traitements.map((t: any) => (
               <li key={t.id}>
@@ -92,16 +96,8 @@ export function DossierDetail() {
               </li>
             ))}
           </ul>
-
-          <h2 className="fr-mt-6w">Messagerie ({d.messages.length})</h2>
-          {d.messages.map((m: any) => (
-            <div key={m.id} className="fr-card fr-p-2w fr-mb-2w">
-              <p className="fr-text--xs fr-mb-1v">{m.email} — {formatDate(m.createdAt)}</p>
-              <p className="fr-mb-0" style={{ whiteSpace: "pre-line" }}>{m.body}</p>
-            </div>
-          ))}
         </>
       )}
-    </>
+    </main>
   );
 }

@@ -1,7 +1,8 @@
-// Serveur intermédiaire : seul à détenir le jeton. Lecture, plus une route de changement d'état.
+// Serveur intermédiaire : seul à détenir le jeton. Lecture seule, sauf si DN_ENABLE_MUTATIONS=1.
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { TransitionError, changeDossierState, fetchDemarche, fetchDossier, fetchDossiers } from "./dn.ts";
+import { fetchKanban } from "./kanban.ts";
 
 const app = new Hono().basePath("/api");
 
@@ -9,6 +10,8 @@ app.onError((err, c) => {
   console.error(err);
   return c.json({ error: "Erreur lors de l'appel à l'API Démarche Numérique" }, 502);
 });
+
+app.get("/kanban", async (c) => c.json(await fetchKanban()));
 
 app.get("/demarche", async (c) => c.json(await fetchDemarche()));
 
@@ -23,9 +26,13 @@ app.get("/dossiers/:number{[0-9]+}", async (c) => {
   return dossier ? c.json(dossier) : c.json({ error: "Dossier introuvable" }, 404);
 });
 
-// Seule route d'écriture. Le Content-Type JSON imposé empêche qu'un autre site
-// déclenche cette route depuis le navigateur (requête « simple » sans preflight).
+// Seule route d'écriture, désactivée par défaut (étape 3 de docs/SPEC-kanban.md).
+// Le Content-Type JSON imposé empêche qu'un autre site déclenche cette route
+// depuis le navigateur (requête « simple » sans preflight).
+const MUTATIONS_ENABLED = process.env.DN_ENABLE_MUTATIONS === "1";
+
 app.post("/dossiers/:number{[0-9]+}/state", async (c) => {
+  if (!MUTATIONS_ENABLED) return c.json({ error: "Changements d'état désactivés (DN_ENABLE_MUTATIONS)" }, 403);
   if (!c.req.header("content-type")?.startsWith("application/json")) {
     return c.json({ error: "Content-Type application/json attendu" }, 415);
   }
@@ -42,5 +49,5 @@ app.post("/dossiers/:number{[0-9]+}/state", async (c) => {
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () =>
-  console.log(`API sur http://127.0.0.1:${port}/api`),
+  console.log(`API sur http://127.0.0.1:${port}/api (changements d'état ${MUTATIONS_ENABLED ? "ACTIVÉS" : "désactivés"})`),
 );

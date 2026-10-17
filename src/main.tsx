@@ -1,16 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Link } from "react-router";
-import { startReactDsfr } from "@codegouvfr/react-dsfr/spa";
+import { BrowserRouter } from "react-router";
 import { App } from "./App.tsx";
-
-startReactDsfr({ defaultColorScheme: "system", Link });
-
-declare module "@codegouvfr/react-dsfr/spa" {
-  interface RegisterLink {
-    Link: typeof Link;
-  }
-}
+import "@fontsource/source-sans-3/400.css";
+import "@fontsource/source-sans-3/600.css";
+import "@fontsource/source-sans-3/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "./styles/tokens.css";
+import "./styles/app.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

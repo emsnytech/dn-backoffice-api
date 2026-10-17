@@ -1,17 +1,7 @@
-import { Badge } from "@codegouvfr/react-dsfr/Badge";
-import type { AlertProps } from "@codegouvfr/react-dsfr/Alert";
-
-export const STATES: Record<string, { label: string; severity?: AlertProps.Severity | "new" }> = {
-  en_construction: { label: "En construction", severity: "info" },
-  en_instruction: { label: "En instruction", severity: "new" },
-  accepte: { label: "Accepté", severity: "success" },
-  refuse: { label: "Refusé", severity: "error" },
-  sans_suite: { label: "Classé sans suite" },
-};
+import { STATE_LABELS } from "./board.ts";
 
 export function StateBadge({ state }: { state: string }) {
-  const s = STATES[state] ?? { label: state };
-  return <Badge small severity={s.severity} noIcon>{s.label}</Badge>;
+  return <span className={`state-badge state-badge--${state}`}>{STATE_LABELS[state as keyof typeof STATE_LABELS] ?? state}</span>;
 }
 
 // Événements de l'historique (Traitement.event)

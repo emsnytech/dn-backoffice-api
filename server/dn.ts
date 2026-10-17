@@ -4,7 +4,8 @@ import { MOTIVATION_ALLOWED, MOTIVATION_REQUIRED, TRANSITIONS, type DossierState
 
 const API_URL = process.env.DN_API_URL ?? "https://demarche.numerique.gouv.fr/api/v2/graphql";
 const TOKEN = process.env.DN_API_TOKEN;
-export const DEMARCHE_NUMBER = Number(process.env.DN_DEMARCHE_NUMBER);
+// DN_DEMARCHE_NUMERO : nom utilisé par docs/SPEC-kanban.md, accepté en alias.
+export const DEMARCHE_NUMBER = Number(process.env.DN_DEMARCHE_NUMBER ?? process.env.DN_DEMARCHE_NUMERO);
 
 if (!TOKEN || !DEMARCHE_NUMBER) {
   console.error("DN_API_TOKEN et DN_DEMARCHE_NUMBER doivent être définis dans .env");

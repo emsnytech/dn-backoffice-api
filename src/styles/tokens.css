@@ -1,0 +1,37 @@
+/* Jetons de design (docs/SPEC-kanban.md § 8), avec la police et les couleurs de fond
+   de FORM2026 (~/Documents/cartographie/app/form2026_template.html). */
+:root {
+  --font-sans: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-bg: #fbf9f5;        /* FORM2026 --paper */
+  --color-surface: #ffffff;   /* FORM2026 --paper-raised */
+  --color-column: #efece5;    /* dérivé de --paper, un cran plus foncé */
+  --color-border: #e2dfd7;    /* FORM2026 --line */
+  --color-border-strong: #cdc9bf;
+  --color-text: #1b1f2a;
+  --color-text-muted: #4a4f5c;
+
+  --color-accent: #2b3f8f;
+  --color-accent-strong: #1a2a66;
+  --color-accent-soft: #e6eaf6;
+
+  --color-success: #3d6b3a;
+  --color-success-soft: #eaf3e8;
+  --color-danger: #8c1d18;
+  --color-danger-soft: #f9dedc;
+  --color-avis: #5e2463;
+  --color-avis-soft: #f3e3f4;
+  --color-pj: #7a3500;
+  --color-pj-soft: #fbe7d3;
+  --color-tag: #3a3e49;
+  --color-tag-soft: #efede7;
+  --color-agent-soft: #d8dceb;
+  --color-neutral-dot: #8a8f9c;
+
+  --radius-column: 12px;
+  --radius-card: 10px;
+  --radius-button: 8px;
+  --radius-badge: 6px;
+  --target-min: 44px;
+}
