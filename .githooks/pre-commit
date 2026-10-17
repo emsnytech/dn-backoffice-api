@@ -1,0 +1,27 @@
+#!/bin/sh
+# Bloque tout commit qui exposerait le jeton d'API ou des données d'usagers.
+# Activé par `npm install` (script prepare : git config core.hooksPath .githooks).
+
+fail=0
+
+# 1. Fichiers interdits : .env (sauf .env.example) et data/
+forbidden=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '(^|/)\.env($|\.)|^data/' | grep -v '\.env\.example$')
+if [ -n "$forbidden" ]; then
+  echo "✋ Commit bloqué : fichiers sensibles indexés :"
+  echo "$forbidden" | sed 's/^/   - /'
+  fail=1
+fi
+
+# 2. Valeur exacte du jeton présent dans .env (jamais affichée)
+if [ -f .env ]; then
+  token=$(sed -n 's/^DN_API_TOKEN=//p' .env | tr -d '\r"'"'"' ')
+  if [ -n "$token" ] && git diff --cached -U0 | grep -qF -- "$token"; then
+    echo "✋ Commit bloqué : le jeton DN_API_TOKEN apparaît dans les modifications indexées."
+    fail=1
+  fi
+fi
+
+if [ $fail -ne 0 ]; then
+  echo "   Retirez-les de l'index (git restore --staged <fichier>) puis recommencez."
+  exit 1
+fi

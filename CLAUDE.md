@@ -48,6 +48,9 @@ ses changements au lieu de les appliquer directement sur les données ou sur l'A
 - **Le jeton ne quitte jamais le serveur.** Il ne doit apparaître ni dans le
   front, ni dans les logs, ni dans les fichiers commités. Pour vérifier qu'il est
   bien chargé, n'afficher que sa longueur.
+- Un hook `pre-commit` (`.githooks/`, activé par `npm install`) bloque tout commit
+  contenant un `.env`, un fichier de `data/` ou la valeur du jeton. Ne jamais le
+  contourner (`--no-verify`).
 - **Lecture seule par défaut.** Aucune mutation GraphQL (changement d'état,
   annotation, message) sans demande explicite de l'utilisateur.
 - Les réponses brutes de l'API vont dans `data/` (ignoré par git). Ce sont des

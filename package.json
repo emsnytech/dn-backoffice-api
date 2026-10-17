@@ -9,7 +9,8 @@
     "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
     "typecheck": "tsc --noEmit",
     "postinstall": "copy-dsfr-to-public",
-    "predev:web": "only-include-used-icons"
+    "predev:web": "only-include-used-icons",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@codegouvfr/react-dsfr": "^1.36.0",
