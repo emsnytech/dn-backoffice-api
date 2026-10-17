@@ -39,7 +39,7 @@ const CHAMP = `
   fragment ChampFields on Champ {
     __typename id champDescriptorId label stringValue
     ... on MultipleDropDownListChamp { values }
-    ... on CarteChamp { geoAreas { id source description geometry { type } } }
+    ... on CarteChamp { geoAreas { id source description geometry { type coordinates } } }
   }`;
 
 const DOSSIER_SUMMARY = `

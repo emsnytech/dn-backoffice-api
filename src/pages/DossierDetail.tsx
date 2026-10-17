@@ -2,6 +2,7 @@ import { useParams } from "react-router";
 import { Alert } from "@codegouvfr/react-dsfr/Alert";
 import { Breadcrumb } from "@codegouvfr/react-dsfr/Breadcrumb";
 import { useApi } from "../api.ts";
+import { GeoMap } from "../GeoMap.tsx";
 import { EVENTS, StateBadge, demandeurName, formatDate } from "../format.tsx";
 
 // Types de champs sans valeur saisie : affichés comme structure, pas comme réponse.
@@ -15,13 +16,16 @@ const GEO_SOURCES: Record<string, string> = {
 function GeoAreas({ areas }: { areas: any[] }) {
   if (!areas.length) return null;
   return (
-    <ul className="fr-mb-0">
-      {areas.map((a) => (
-        <li key={a.id}>
-          {GEO_SOURCES[a.source] ?? a.source} ({a.geometry.type}){a.description && ` : ${a.description}`}
-        </li>
-      ))}
-    </ul>
+    <>
+      <GeoMap areas={areas} />
+      <ul className="fr-mb-0">
+        {areas.map((a) => (
+          <li key={a.id}>
+            {GEO_SOURCES[a.source] ?? a.source} ({a.geometry.type}){a.description && ` : ${a.description}`}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -64,7 +68,7 @@ export function DossierDetail() {
       {d && rev && (
         <>
           <h1 className="fr-mb-1w">Dossier n° {d.number}</h1>
-          <p><StateBadge state={d.state} /></p>
+          <div className="fr-mb-2w"><StateBadge state={d.state} /></div>
           <ul className="fr-text--sm">
             <li>Demandeur : {demandeurName(d)} ({d.usager.email})</li>
             <li>Groupe instructeur : {d.groupeInstructeur.label}</li>

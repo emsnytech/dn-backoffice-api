@@ -85,6 +85,15 @@ ses changements au lieu de les appliquer directement sur les données ou sur l'A
 - Le jeton peut être restreint par adresse IP. L'API n'est joignable qu'en IPv4 :
   c'est donc l'IPv4 publique qu'il faut autoriser.
 - Le contenu des messages vient des usagers : l'afficher en texte brut, jamais en HTML.
+- Champs Carte : demander `geometry { type coordinates }` (du GeoJSON). Ils sont affichés
+  avec Leaflet sur le fond Plan IGN de la Géoplateforme, public et sans clé.
+
+## Pièges connus
+
+- Après un `npm install` d'une nouvelle bibliothèque, arrêter puis relancer `npm run dev`.
+  Sinon Vite reconstruit ses dépendances en cours de route, le navigateur se retrouve
+  avec deux copies de React (« Invalid hook call »), et il faut forcer le rechargement
+  avec Cmd+Maj+R. En cas de doute : `rm -rf node_modules/.vite`.
 
 ## Commandes
 
