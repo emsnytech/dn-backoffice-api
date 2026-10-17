@@ -45,6 +45,11 @@ pour vérifier ou comparer. Une instance de Claude peut être sollicitée pour r
 ce projet et proposer des améliorations : elle suit les mêmes règles. Elle propose
 ses changements au lieu de les appliquer directement sur les données ou sur l'API.
 
+`.claude/settings.json` (versionné) interdit à toute session de Claude de lire ou de
+modifier `.env` et `data/`, avec les outils de fichiers comme avec les commandes shell
+courantes (`cat`, `grep`, `source`…). Le serveur et le hook git lisent toujours le `.env`
+normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
+
 ## Règles
 
 - **Le jeton ne quitte jamais le serveur.** Il ne doit apparaître ni dans le

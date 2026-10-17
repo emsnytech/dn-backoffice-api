@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Read(./data/**)",
+      "Edit(./.env)",
+      "Edit(./.env.local)",
+      "Edit(./.env.*.local)",
+      "Edit(./data/**)",
+      "Bash(cat .env*)",
+      "Bash(cat ./.env*)",
+      "Bash(less .env*)",
+      "Bash(more .env*)",
+      "Bash(head *.env*)",
+      "Bash(tail *.env*)",
+      "Bash(grep *.env*)",
+      "Bash(sed *.env*)",
+      "Bash(awk *.env*)",
+      "Bash(source .env*)",
+      "Bash(. ./.env*)",
+      "Bash(nano .env*)",
+      "Bash(vim .env*)",
+      "Bash(cat data/*)",
+      "Bash(cat ./data/*)"
+    ]
+  }
+}
