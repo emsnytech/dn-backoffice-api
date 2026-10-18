@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Outlet } from "react-router";
+import { Link, Outlet, useNavigate } from "react-router";
 import { useApi } from "../api.ts";
-import { COLUMNS, STATE_LABELS, age, filters, formatMontant, matchesSearch, type Card, type FilterId, type Kanban } from "../board.ts";
+import { COLUMNS, STATE_LABELS, age, demarchePath, dossierPath, filters, formatMontant, matchesSearch, type Card, type FilterId, type Kanban } from "../board.ts";
 import { KanbanCard } from "../components/KanbanCard.tsx";
 import { TransitionDialog, type PendingMove } from "../components/TransitionDialog.tsx";
 import { canTransition, type DossierState } from "../../shared/transitions.ts";
@@ -24,8 +24,14 @@ function sinceLabel(iso: string, now: number) {
   return `à ${new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-export function Board() {
-  const kanban = useApi<Kanban>("/api/kanban");
+type DemarcheItem = { numero: number; libelle: string };
+
+// Kanban d'une démarche déclarée (/demarches/:numero). Monté avec key={numero} :
+// changer de démarche repart d'un état vierge (filtres, recherche, glisser-déposer).
+export function Board({ numero }: { numero: string }) {
+  const navigate = useNavigate();
+  const kanban = useApi<Kanban>(`/api/demarches/${numero}/kanban`);
+  const list = useApi<{ demarches: DemarcheItem[] }>("/api/demarches?resume=0");
   const [view, setView] = useState<"kanban" | "liste">("kanban");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterId>("tous");
@@ -56,7 +62,7 @@ export function Board() {
   // Pas de mise à jour optimiste : la carte ne bouge qu'une fois le tableau relu depuis DN.
   async function confirmMove(options: { motivation: string; disableNotification: boolean }) {
     if (!pending) return;
-    const res = await fetch(`/api/dossiers/${pending.card.number}/state`, {
+    const res = await fetch(`/api/demarches/${numero}/dossiers/${pending.card.number}/state`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ state: pending.target, ...options }),
@@ -101,6 +107,7 @@ export function Board() {
     <KanbanCard
       key={c.number}
       card={c}
+      to={dossierPath(numero, c.number)}
       delaiCibleJours={k!.delaiCibleJours}
       move={
         canMove
@@ -122,8 +129,21 @@ export function Board() {
     <>
       <header className="app-header">
         <div className="app-header__titles">
-          <div className="app-header__kicker">Back office indépendant · connecté à Démarche Numérique</div>
-          <h1>{k ? `Démarche test n° ${k.demarche.number} — ${k.demarche.title}` : "Chargement de la démarche…"}</h1>
+          <nav className="app-header__nav" aria-label="Démarches">
+            <Link to="/">← Toutes les démarches</Link>
+            {list.data && list.data.demarches.length > 1 && (
+              <label className="demarche-select">
+                <span className="sr-only">Changer de démarche</span>
+                <select value={numero} onChange={(e) => navigate(demarchePath(e.target.value))}>
+                  {list.data.demarches.map((d) => (
+                    <option key={d.numero} value={d.numero}>{d.libelle} (n° {d.numero})</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <Link to={`${demarchePath(numero)}/parametres`}>Paramètres</Link>
+          </nav>
+          <h1>{k ? `${k.demarche.libelle} — n° ${k.demarche.number}` : kanban.error ? `Démarche n° ${numero}` : "Chargement de la démarche…"}</h1>
         </div>
         <div className={kanban.error ? "sync sync--error" : "sync"} role="status">
           <span>
@@ -225,7 +245,7 @@ export function Board() {
                       const a = age(c, k.delaiCibleJours, now);
                       return (
                         <tr key={c.number}>
-                          <td><Link to={`/dossiers/${c.number}`} className="num">{c.number}</Link></td>
+                          <td><Link to={dossierPath(numero, c.number)} className="num">{c.number}</Link></td>
                           <td>{c.demandeur.label}</td>
                           <td>{STATE_LABELS[c.state]}</td>
                           <td>{a.late ? <span className="card__age card__age--late">{a.label} · délai dépassé</span> : a.label}</td>
@@ -245,7 +265,9 @@ export function Board() {
                 <span>
                   {canMove
                     ? "Glissez une carte ou utilisez « Déplacer vers… ». Seuls les déplacements autorisés par DN sont proposés, après confirmation."
-                    : "Changements d'état désactivés sur ce serveur (DN_ENABLE_MUTATIONS)."}
+                    : !k.mutationsGlobal
+                      ? "Changements d'état désactivés sur ce serveur (DN_ENABLE_MUTATIONS)."
+                      : "Changements d'état non autorisés pour cette démarche : lecture seule (voir ses paramètres)."}
                 </span>
               </div>
               <ul>
@@ -258,7 +280,7 @@ export function Board() {
         </>
       )}
 
-      <Outlet context={{ kanban: k, askMove, version } satisfies PanelContext} />
+      <Outlet context={{ numero, kanban: k, askMove, version } satisfies PanelContext} />
       <TransitionDialog pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMove} />
     </>
   );

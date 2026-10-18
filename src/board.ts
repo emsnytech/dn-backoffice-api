@@ -19,9 +19,12 @@ export type Card = {
 };
 
 export type Kanban = {
-  demarche: { number: number; title: string };
+  demarche: { number: number; title: string; state: string; libelle: string };
   me: { id: string; email: string } | null;
+  // Vrai seulement si l'interrupteur général et le réglage de la démarche l'autorisent.
   mutationsEnabled: boolean;
+  mutationsGlobal: boolean;
+  mutationsDemarche: boolean;
   delaiCibleJours: number;
   syncedAt: string;
   dossiers: Card[];
@@ -34,6 +37,18 @@ export const STATE_LABELS: Record<Card["state"], string> = {
   refuse: "Refusé",
   sans_suite: "Classé sans suite",
 };
+
+// États d'une démarche (DemarcheState).
+export const DEMARCHE_STATES: Record<string, string> = {
+  brouillon: "En test (brouillon)",
+  publiee: "Publiée",
+  close: "Close",
+  depubliee: "Dépubliée",
+};
+
+// Adresses du front (docs/SPEC-multi-demarches.md § A).
+export const demarchePath = (numero: number | string) => `/demarches/${numero}`;
+export const dossierPath = (numero: number | string, n: number | string) => `/demarches/${numero}/dossiers/${n}`;
 
 type Group = { state: Card["state"]; title?: string };
 export type Column = { id: string; label: string; apiState: string; hint: string; dot: string; groups: Group[] };

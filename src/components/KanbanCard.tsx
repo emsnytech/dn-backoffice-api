@@ -21,6 +21,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
 
 type Props = {
   card: Card;
+  // Adresse de la fiche du dossier.
+  to: string;
   delaiCibleJours: number;
   // Présents seulement quand les changements d'état sont activés côté serveur.
   move?: {
@@ -31,7 +33,7 @@ type Props = {
   };
 };
 
-export function KanbanCard({ card, delaiCibleJours, move }: Props) {
+export function KanbanCard({ card, to, delaiCibleJours, move }: Props) {
   const a = age(card, delaiCibleJours);
   const agents = card.instructeurs.map((i) => i.email);
   const targets = Object.keys(TRANSITIONS[card.state] ?? {}) as DossierState[];
@@ -49,7 +51,7 @@ export function KanbanCard({ card, delaiCibleJours, move }: Props) {
       }}
       onDragEnd={move?.onDragEnd}
     >
-      <Link to={`/dossiers/${card.number}`} className="card__link" draggable={false}>
+      <Link to={to} className="card__link" draggable={false}>
         <div className="card__row">
           <span className="card__num">N° {card.number}</span>
           <span className={a.late ? "card__age card__age--late" : "card__age"}>

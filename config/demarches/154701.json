@@ -1,0 +1,11 @@
+{
+  "numero": 154701,
+  "libelle": "Subventions (modèle back kanban)",
+  "mutations": false,
+  "delaiCibleJours": 45,
+  "champs": {
+    "objet": null,
+    "montantDemande": null
+  },
+  "valideLe": "2026-10-18T17:44:03.874Z"
+}

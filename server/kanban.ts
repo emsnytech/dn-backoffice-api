@@ -1,16 +1,12 @@
 // Données du tableau kanban (étape 1 de docs/SPEC-kanban.md) : lecture seule.
 // Le serveur réduit chaque dossier aux seules informations affichées sur une carte.
-import { readFile } from "node:fs/promises";
-import { DEMARCHE_NUMBER, MUTATIONS_ENABLED, gql } from "./dn.ts";
-
-type Config = { champObjet: string | null; champMontant: string | null; delaiCibleJours: number };
-
-const CONFIG_URL = new URL("../config/demarche.json", import.meta.url);
+import { MUTATIONS_ENABLED, gql } from "./dn.ts";
+import type { ChampRef, DemarcheConfig } from "./config.ts";
 
 const KANBAN_QUERY = `
   query getKanban($number: Int!, $after: String) {
     demarche(number: $number) {
-      number title
+      number title state
       groupeInstructeurs { instructeurs { id email } }
       dossiers(first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
@@ -50,15 +46,22 @@ export function demandeur(d: any) {
   }
 }
 
-// Un champ de la config est désigné par son id de descripteur ou par son libellé exact.
-function findChamp(champs: any[], ref: string | null) {
-  if (!ref) return null;
-  return champs.find((c) => c.champDescriptorId === ref || c.label === ref) ?? null;
+// Un champ du paramétrage est désigné par son identifiant de descripteur, stable d'une
+// révision à l'autre (docs/SPEC-multi-demarches.md § B).
+function findChamp(champs: any[], ref: ChampRef | null) {
+  return ref ? (champs.find((c) => c.champDescriptorId === ref.id) ?? null) : null;
 }
 
-function toCard(d: any, config: Config) {
-  const objet = findChamp(d.champs, config.champObjet);
-  const montant = findChamp(d.champs, config.champMontant);
+// IntegerNumberChamp.value est un BigInt, transmis en chaîne par l'API.
+function toNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toCard(d: any, config: DemarcheConfig) {
+  const objet = findChamp(d.champs, config.champs.objet);
+  const montant = findChamp(d.champs, config.champs.montantDemande);
   const pj = d.champs.filter((c: any) => c.__typename === "PieceJustificativeChamp");
   return {
     number: d.number,
@@ -68,7 +71,7 @@ function toCard(d: any, config: Config) {
     dateTraitement: d.dateTraitement,
     demandeur: demandeur(d.demandeur),
     objet: objet?.stringValue || null,
-    montant: montant ? (montant.value ?? null) : null,
+    montant: montant ? toNumber(montant.value) : null,
     instructeurs: d.instructeurs,
     messages: d.messages.length,
     avisDemandes: d.avis.filter((a: any) => !a.reponse).length,
@@ -79,13 +82,12 @@ function toCard(d: any, config: Config) {
   };
 }
 
-export async function fetchKanban() {
-  const config: Config = JSON.parse(await readFile(CONFIG_URL, "utf8"));
+export async function fetchKanban(config: DemarcheConfig) {
   const nodes: any[] = [];
   let demarche: any;
   let after: string | null = null;
   do {
-    const data: any = await gql(KANBAN_QUERY, { number: DEMARCHE_NUMBER, after });
+    const data: any = await gql(KANBAN_QUERY, { number: config.numero, after });
     demarche = data.demarche;
     nodes.push(...demarche.dossiers.nodes);
     after = demarche.dossiers.pageInfo.hasNextPage ? demarche.dossiers.pageInfo.endCursor : null;
@@ -97,11 +99,39 @@ export async function fetchKanban() {
   const me = email ? (instructeurs.find((i: any) => i.email === email) ?? null) : null;
 
   return {
-    demarche: { number: demarche.number, title: demarche.title },
+    demarche: { number: demarche.number, title: demarche.title, state: demarche.state, libelle: config.libelle },
     me,
-    mutationsEnabled: MUTATIONS_ENABLED,
+    // Interrupteur général (DN_ENABLE_MUTATIONS) et réglage de la démarche : il faut les deux.
+    mutationsEnabled: MUTATIONS_ENABLED && config.mutations,
+    mutationsGlobal: MUTATIONS_ENABLED,
+    mutationsDemarche: config.mutations,
     delaiCibleJours: config.delaiCibleJours,
     syncedAt: new Date().toISOString(),
     dossiers: nodes.map((d) => toCard(d, config)),
   };
+}
+
+// Résumé d'une démarche pour la page d'accueil : titre, état et nombre de dossiers par état.
+const SUMMARY_QUERY = `
+  query getSummary($number: Int!, $after: String) {
+    demarche(number: $number) {
+      number title state
+      dossiers(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { state }
+      }
+    }
+  }`;
+
+export async function fetchSummary(config: DemarcheConfig) {
+  const counts: Record<string, number> = { en_construction: 0, en_instruction: 0, accepte: 0, refuse: 0, sans_suite: 0 };
+  let demarche: any;
+  let after: string | null = null;
+  do {
+    const data: any = await gql(SUMMARY_QUERY, { number: config.numero, after });
+    demarche = data.demarche;
+    for (const d of demarche.dossiers.nodes) counts[d.state] = (counts[d.state] ?? 0) + 1;
+    after = demarche.dossiers.pageInfo.hasNextPage ? demarche.dossiers.pageInfo.endCursor : null;
+  } while (after);
+  return { title: demarche.title, state: demarche.state, counts };
 }

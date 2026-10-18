@@ -7,10 +7,11 @@ import { useApi } from "../api.ts";
 import { GeoMap } from "../GeoMap.tsx";
 import { MessageBody } from "../components/MessageBody.tsx";
 import { EVENTS, StateBadge, formatDate } from "../format.tsx";
-import { age, formatMontant, initials, type Card, type Kanban } from "../board.ts";
+import { age, demarchePath, dossierPath, formatMontant, type Card, type Kanban } from "../board.ts";
 import { TRANSITIONS, type DossierState } from "../../shared/transitions.ts";
 
 export type PanelContext = {
+  numero: string;
   kanban?: Kanban;
   askMove: (card: Card, target: DossierState) => void;
   // Incrémenté par le tableau après chaque changement d'état : la fiche se relit.
@@ -159,9 +160,9 @@ function AvisItem({ a }: { a: any }) {
 export function DossierDetail() {
   const { number } = useParams();
   const navigate = useNavigate();
-  const { kanban, askMove, version } = useOutletContext<PanelContext>();
-  const demarche = useApi<any>("/api/demarche");
-  const dossier = useApi<any>(`/api/dossiers/${number}?v=${version}`);
+  const { numero, kanban, askMove, version } = useOutletContext<PanelContext>();
+  const demarche = useApi<any>(`/api/demarches/${numero}`);
+  const dossier = useApi<any>(`/api/demarches/${numero}/dossiers/${number}?v=${version}`);
   const [tab, setTab] = useState<Tab>("demande");
   const titleRef = useRef<HTMLHeadingElement>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -171,8 +172,8 @@ export function DossierDetail() {
 
   // Fermeture : retour au tableau, focus rendu à la carte (ou à la ligne) du dossier.
   function close() {
-    navigate("/");
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(`a[href="/dossiers/${number}"]`)?.focus());
+    navigate(demarchePath(numero));
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`a[href="${dossierPath(numero, number!)}"]`)?.focus());
   }
 
   useEffect(() => {
@@ -227,7 +228,7 @@ export function DossierDetail() {
       <aside className="dossier-panel" aria-labelledby="dossier-title">
         <div className="dossier-panel__head">
           <div className="dossier-panel__nav">
-            <Link to="/" onClick={(e) => { e.preventDefault(); close(); }}>
+            <Link to={demarchePath(numero)} onClick={(e) => { e.preventDefault(); close(); }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
               Retour au tableau
             </Link>

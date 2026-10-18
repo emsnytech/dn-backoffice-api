@@ -1,20 +1,22 @@
 # dn-backoffice-api
 
-Back office indépendant pour instruire les dossiers d'une démarche
+Back office indépendant pour instruire les dossiers de démarches
 [Démarche Numérique](https://demarche.numerique.gouv.fr) (ex-Démarches Simplifiées),
-branché uniquement sur son API GraphQL v2. Pour l'instant, une seule démarche
-de test est configurée.
+branché uniquement sur son API GraphQL v2. Il n'accède qu'aux démarches déclarées dans
+`config/demarches/`.
 
 ## Objectif
 
 La feuille de route de référence est `docs/SPEC-kanban.md`, avec les maquettes dans
 `docs/maquettes/`. Ces maquettes servent de référence visuelle : ne pas les exécuter
-ni recopier leur format.
+ni recopier leur format. Le chantier en cours est décrit dans
+`docs/SPEC-multi-demarches.md` (étapes A à D, une validation de l'utilisateur entre
+chaque étape).
 
 1. **Étape 1 (faite)** : kanban en lecture seule (colonnes, cartes, recherche,
    filtres, bouton Synchroniser, vue Liste). Aucune mutation.
 2. **Étape 2 (en test)** : la fiche dossier s'ouvre en panneau latéral par-dessus le
-   tableau (`/dossiers/:number`, route imbriquée, URL partageable). Onglets Demande,
+   tableau (route imbriquée, URL partageable). Onglets Demande,
    Annotations, Messagerie, Avis et Historique, lien « Ouvrir dans DN ». Les blocs
    répétables sont affichés ligne par ligne. Le pied de la fiche propose les décisions
    autorisées depuis l'état courant, avec la même confirmation que le tableau.
@@ -23,6 +25,14 @@ ni recopier leur format.
    carte. Une confirmation est demandée, avec la motivation et l'option « Ne pas notifier
    l'usager ». Pas de mise à jour optimiste : le tableau est relu depuis DN après chaque
    succès. Tout reste désactivé tant que `DN_ENABLE_MUTATIONS` n'est pas à `1`.
+
+Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
+
+- **A (en test)** : accueil avec une carte par démarche déclarée, kanban et fiche par
+  démarche, ajout d'une démarche par son numéro (accès vérifié par le serveur, déclarée
+  en lecture seule), page Paramètres en lecture seule. Réglage `mutations` par démarche,
+  en plus de `DN_ENABLE_MUTATIONS`.
+- **B, C, D** : à faire, chacune après validation de la précédente.
 
 ## Stack
 
@@ -38,18 +48,20 @@ ni recopier leur format.
   `@fontsource` plutôt que chargée depuis Google Fonts. Pas de police à chasse fixe :
   la pile système `ui-monospace` sert aux seuls identifiants techniques, et les
   chiffres sont en `tabular-nums`.
-- `config/demarche.json` (versionné, sans secret) : champs « objet » et « montant »
-  (désignés par leur id de descripteur ou leur libellé exact) et délai cible en jours.
+- `config/demarches/<numéro>.json` (versionné, sans secret) : une fiche par démarche
+  déclarée (libellé court, réglage `mutations`, délai cible, champs « objet » et
+  « montant demandé » désignés par leur identifiant de descripteur). Écrite uniquement
+  par le serveur (`PUT /api/demarches/:numero/parametres`, entrée validée).
 
 ## Configuration (`.env`, jamais commité)
 
 | Variable             | Rôle                                                    |
 |----------------------|---------------------------------------------------------|
-| `DN_DEMARCHE_NUMBER` | Numéro de la démarche (`DN_DEMARCHE_NUMERO`, le nom utilisé par la spec, est accepté) |
+| `DN_DEMARCHE_NUMBER` | Ancien réglage à une seule démarche. Ne sert plus qu'à la migration : si aucune démarche n'est déclarée, celle-ci l'est au démarrage du serveur |
 | `DN_API_TOKEN`       | Jeton d'API (profil instructeur/administrateur)         |
 | `DN_API_URL`         | Optionnel, par défaut `https://demarche.numerique.gouv.fr/api/v2/graphql` |
-| `DN_INSTRUCTEUR_EMAIL` | Optionnel. « Moi » pour le filtre « Suivis par moi » (masqué sans cette variable), et instructeur au nom duquel les changements d'état sont faits |
-| `DN_ENABLE_MUTATIONS` | `1` seulement à l'étape 3. Sinon, la route d'écriture répond 403 |
+| `DN_INSTRUCTEUR_EMAIL` | Optionnel. « Moi » pour le filtre « Suivis par moi » (masqué sans cette variable), et instructeur au nom duquel les changements d'état sont faits, sur chaque démarche |
+| `DN_ENABLE_MUTATIONS` | Interrupteur général des changements d'état. Sans `1`, la route d'écriture répond 403, quel que soit le réglage `mutations` des démarches |
 
 Authentification : en-tête `Authorization: Bearer <DN_API_TOKEN>`.
 
@@ -95,21 +107,28 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
 ## Organisation
 
 - `server/dn.ts` : client GraphQL (seul fichier qui lit le jeton) et requêtes.
-- `server/index.ts` : serveur Hono sur `127.0.0.1:8787` : `GET /api/kanban` (cartes
-  réduites), `GET /api/demarche`, `GET /api/dossiers?state=`, `GET /api/dossiers/:number`,
-  et `POST /api/dossiers/:number/state` (désactivée par défaut).
-- `server/kanban.ts` : requête et mise en forme des cartes du kanban, lecture de
-  `config/demarche.json`.
+- `server/index.ts` : serveur Hono sur `127.0.0.1:8787`. Toute route d'une démarche non
+  déclarée répond 404, sauf `verifier` et la création par `PUT parametres` :
+  - `GET /api/demarches` (résumé par démarche ; `?resume=0` : liste seule, sans appel à DN) ;
+  - `GET /api/demarches/:numero` (démarche et descripteurs de champs), `…/kanban`,
+    `…/dossiers/:n`, `…/parametres` ; `PUT …/parametres` ; `GET …/verifier` ;
+  - `POST /api/demarches/:numero/dossiers/:n/state` (désactivée par défaut) ;
+  - `GET /api/dossiers/:n/demarche`, pour rediriger les anciennes adresses `/dossiers/:n`.
+- `server/config.ts` : lecture, validation et écriture des fiches de `config/demarches/`,
+  migration depuis l'ancienne configuration à une démarche.
+- `server/kanban.ts` : requête et mise en forme des cartes du kanban, résumé de l'accueil.
 - `src/` : front React. Vite (port 5173) transmet `/api` au serveur Hono.
-  Pages : kanban et vue Liste (`/`), fiche en panneau latéral (`/dossiers/:number`,
-  `src/pages/DossierDetail.tsx`).
+  Pages : accueil (`/`, `src/pages/Home.tsx`), kanban et vue Liste (`/demarches/:numero`),
+  fiche en panneau latéral (`/demarches/:numero/dossiers/:n`, `src/pages/DossierDetail.tsx`),
+  paramètres (`/demarches/:numero/parametres`).
   Les messages DN (souvent du HTML) passent par `src/components/MessageBody.tsx`,
   qui ne recrée qu'une liste fermée de balises.
   Règles d'affichage dans `src/board.ts`.
 - `shared/transitions.ts` : transitions d'état autorisées (utilisées par le serveur).
-- `scripts/fetch-demarche.ts` : enregistre les données brutes dans `data/`.
+- `scripts/fetch-demarche.ts` : enregistre les données brutes dans `data/`
+  (`npm run fetch -- <numéro>`, ou toutes les démarches déclarées sans numéro).
 - `logs/mutations.log` (ignoré par git) : une ligne JSON par tentative de changement
-  d'état (date, dossier, départ, arrivée, notification, résultat). Ni le jeton, ni le
+  d'état (date, démarche, dossier, départ, arrivée, notification, résultat). Ni le jeton, ni le
   texte de la motivation.
 
 ## Points d'attention sur l'API
@@ -128,6 +147,12 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   « qui suis-je » (d'où `DN_INSTRUCTEUR_EMAIL`) ; la raison sociale est dans
   `PersonneMorale.entreprise.raisonSociale` ou `association.titre` ; il existe un
   troisième type de demandeur, `PersonneMoraleIncomplete`, qui n'a que le `siret`.
+- Aucune requête ne liste les démarches ouvertes par le jeton. `demarcheDescriptors` renvoie
+  le catalogue public de DN, sans les démarches non publiées : ne pas l'utiliser pour cela.
+  Pour une démarche hors de portée du jeton, DN répond `not_found` (« Demarche not
+  found »), comme pour une démarche inexistante.
+- `IntegerNumberChamp.value` est un `BigInt`, transmis en chaîne : le convertir avec `Number`.
+  `DecimalNumberChamp.value` est un `Float`. Les annotations privées utilisent les mêmes types.
 - Champs Carte : demander `geometry { type coordinates }` (du GeoJSON). Ils sont affichés
   avec Leaflet sur le fond Plan IGN de la Géoplateforme, public et sans clé.
 
@@ -142,7 +167,7 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
 
 ```sh
 npm install         # installe les dépendances et active le hook pre-commit
-npm run fetch       # étape 1 : lit la démarche, les champs et les dossiers et les enregistre dans data/
+npm run fetch       # lit les démarches déclarées (ou: npm run fetch -- <numéro>) et les enregistre dans data/
 npm run dev         # serveur Hono et front Vite → http://localhost:5173
 npm run typecheck
 ```

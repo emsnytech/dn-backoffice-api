@@ -6,13 +6,11 @@ const API_URL = process.env.DN_API_URL ?? "https://demarche.numerique.gouv.fr/ap
 // Site web DN correspondant à l'API, pour le lien « Ouvrir dans DN » de la fiche.
 export const DN_WEB_ORIGIN = new URL(API_URL).origin;
 const TOKEN = process.env.DN_API_TOKEN;
-// DN_DEMARCHE_NUMERO : nom utilisé par docs/SPEC-kanban.md, accepté en alias.
-export const DEMARCHE_NUMBER = Number(process.env.DN_DEMARCHE_NUMBER ?? process.env.DN_DEMARCHE_NUMERO);
 // Changements d'état autorisés seulement si DN_ENABLE_MUTATIONS=1 (étape 3 de docs/SPEC-kanban.md).
 export const MUTATIONS_ENABLED = process.env.DN_ENABLE_MUTATIONS === "1";
 
-if (!TOKEN || !DEMARCHE_NUMBER) {
-  console.error("DN_API_TOKEN et DN_DEMARCHE_NUMBER doivent être définis dans .env");
+if (!TOKEN) {
+  console.error("DN_API_TOKEN doit être défini dans .env");
   process.exit(1);
 }
 
@@ -25,7 +23,11 @@ export async function gql<T>(query: string, variables: Record<string, unknown>):
   const body = await res.json();
   if (!res.ok || body.errors) {
     const err = new Error(`GraphQL ${res.status} : ${JSON.stringify(body.errors ?? body)}`);
-    throw Object.assign(err, { code: body.errors?.[0]?.extensions?.code });
+    // dnMessage : message de DN, affichable tel quel (il ne contient pas le jeton).
+    throw Object.assign(err, {
+      code: body.errors?.[0]?.extensions?.code,
+      dnMessage: (body.errors ?? []).map((e: any) => e.message).join(" ; ") || `Erreur HTTP ${res.status}`,
+    });
   }
   return body.data as T;
 }
@@ -131,16 +133,31 @@ const DOSSIER_QUERY = `
   ${DOSSIER_SUMMARY}
   ${CHAMP}`;
 
-export async function fetchDemarche() {
-  const { demarche } = await gql<{ demarche: any }>(DEMARCHE_QUERY, { number: DEMARCHE_NUMBER });
+export async function fetchDemarche(numero: number) {
+  const { demarche } = await gql<{ demarche: any }>(DEMARCHE_QUERY, { number: numero });
   return demarche;
 }
 
-export async function fetchDossiers() {
+// Accès du jeton à une démarche, déclarée ou non (route verifier). DN répond « not_found »
+// aussi bien pour une démarche inexistante que pour une démarche hors de portée du jeton.
+export async function checkDemarche(numero: number) {
+  try {
+    const { demarche } = await gql<{ demarche: any }>(
+      `query check($number: Int!) { demarche(number: $number) { number title state } }`,
+      { number: numero },
+    );
+    return { ok: true as const, demarche };
+  } catch (e: any) {
+    if (!e.dnMessage || !e.code) throw e;
+    return { ok: false as const, code: e.code as string, message: e.dnMessage as string };
+  }
+}
+
+export async function fetchDossiers(numero: number) {
   const dossiers: any[] = [];
   let after: string | null = null;
   do {
-    const data: any = await gql(DOSSIERS_QUERY, { number: DEMARCHE_NUMBER, after });
+    const data: any = await gql(DOSSIERS_QUERY, { number: numero, after });
     const page = data.demarche.dossiers;
     dossiers.push(...page.nodes);
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
@@ -157,13 +174,14 @@ const INSTRUCTEURS_QUERY = `
     }
   }`;
 
-let instructeurId: string | undefined;
+const instructeurIds = new Map<number, string>();
 
-// Instructeur au nom duquel les mutations sont faites : DN_INSTRUCTEUR_EMAIL si défini,
-// sinon l'unique instructeur de la démarche.
-async function getInstructeurId() {
-  if (instructeurId) return instructeurId;
-  const data: any = await gql(INSTRUCTEURS_QUERY, { number: DEMARCHE_NUMBER });
+// Instructeur au nom duquel les mutations sont faites, par démarche : DN_INSTRUCTEUR_EMAIL
+// si défini, sinon l'unique instructeur de la démarche.
+async function getInstructeurId(numero: number) {
+  const cached = instructeurIds.get(numero);
+  if (cached) return cached;
+  const data: any = await gql(INSTRUCTEURS_QUERY, { number: numero });
   const all = new Map<string, { id: string; email: string }>();
   for (const g of data.demarche.groupeInstructeurs) for (const i of g.instructeurs) all.set(i.id, i);
   const wanted = process.env.DN_INSTRUCTEUR_EMAIL;
@@ -175,18 +193,20 @@ async function getInstructeurId() {
         : `${candidates.length} instructeurs sur la démarche : définir DN_INSTRUCTEUR_EMAIL dans .env`,
     );
   }
-  return (instructeurId = candidates[0].id);
+  instructeurIds.set(numero, candidates[0].id);
+  return candidates[0].id;
 }
 
 export class TransitionError extends Error {}
 
 export async function changeDossierState(
+  numero: number,
   number: number,
   target: string,
   options: { motivation?: string; disableNotification?: boolean },
 ) {
   // Toujours repartir de l'état réel côté API, pas de celui affiché dans le navigateur.
-  const dossier = await fetchDossier(number);
+  const dossier = await fetchDossier(numero, number);
   if (!dossier) throw new TransitionError("Dossier introuvable");
   const mutation = TRANSITIONS[dossier.state as DossierState]?.[target as DossierState];
   if (!mutation) throw new TransitionError(`Passage de « ${dossier.state} » à « ${target} » impossible`);
@@ -197,7 +217,7 @@ export async function changeDossierState(
 
   const input: Record<string, unknown> = {
     dossierId: dossier.id,
-    instructeurId: await getInstructeurId(),
+    instructeurId: await getInstructeurId(numero),
     disableNotification: Boolean(options.disableNotification),
   };
   if (MOTIVATION_ALLOWED.has(target as DossierState) && motivation) input.motivation = motivation;
@@ -216,11 +236,20 @@ export async function changeDossierState(
   return { dossier: result.dossier, from: dossier.state as string };
 }
 
-// Renvoie null si le dossier n'appartient pas à la démarche configurée.
-export async function fetchDossier(number: number) {
+// Renvoie null si le dossier n'appartient pas à la démarche indiquée.
+export async function fetchDossier(numero: number, number: number) {
   const { dossier } = await gql<{ dossier: any }>(DOSSIER_QUERY, { number }).catch((e) => {
     if (e.code === "not_found") return { dossier: null };
     throw e;
   });
-  return dossier?.demarche.number === DEMARCHE_NUMBER ? dossier : null;
+  return dossier?.demarche.number === numero ? dossier : null;
+}
+
+// Démarche d'un dossier, pour rediriger les anciennes adresses /dossiers/:n.
+export async function fetchDossierDemarche(number: number): Promise<number | null> {
+  const data = await gql<{ dossier: any }>(`query d($number: Int!) { dossier(number: $number) { demarche { number } } }`, { number }).catch((e) => {
+    if (e.code === "not_found") return { dossier: null };
+    throw e;
+  });
+  return data.dossier?.demarche.number ?? null;
 }

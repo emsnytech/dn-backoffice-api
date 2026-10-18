@@ -1,0 +1,11 @@
+{
+  "numero": 103080,
+  "libelle": "Back office simplifié de DN",
+  "mutations": true,
+  "delaiCibleJours": 45,
+  "champs": {
+    "objet": null,
+    "montantDemande": null
+  },
+  "valideLe": null
+}
