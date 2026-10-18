@@ -109,7 +109,7 @@ export function TransitionDialog({ pending, onCancel, onConfirm }: Props) {
           <button type="button" className="btn btn--secondary" onClick={onCancel} disabled={submitting}>Annuler</button>
           <button
             type="submit"
-            className={negative ? "btn btn--danger" : "btn btn--primary"}
+            className={negative ? "btn btn--danger" : pending.target === "accepte" ? "btn btn--success" : "btn btn--primary"}
             disabled={submitting || (required && !motivation.trim())}
           >
             {submitting ? "Envoi à DN…" : "Confirmer"}

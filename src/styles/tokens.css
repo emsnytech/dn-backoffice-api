@@ -1,37 +1,48 @@
-/* Jetons de design (docs/SPEC-kanban.md § 8), avec la police et les couleurs de fond
-   de FORM2026 (~/Documents/cartographie/app/form2026_template.html). */
+/* Jetons de design : charte FORM 2026 (docs/SPEC-kanban.md § 8).
+   Mêmes noms de variables que FORM 2026. Bleu = administration, vert = usager. */
 :root {
   --font-sans: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* La charte n'a pas de chasse fixe : pile système, pour les seuls identifiants techniques. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-bg: #fbf9f5;        /* FORM2026 --paper */
-  --color-surface: #ffffff;   /* FORM2026 --paper-raised */
-  --color-column: #efece5;    /* dérivé de --paper, un cran plus foncé */
-  --color-border: #e2dfd7;    /* FORM2026 --line */
-  --color-border-strong: #cdc9bf;
-  --color-text: #1b1f2a;
-  --color-text-muted: #4a4f5c;
+  --paper: #fbf9f5;        /* fond de page, fond des cartes */
+  --surface: #ffffff;      /* en-tête, colonnes, fiche */
+  --line: #e2dfd7;         /* bordures */
+  --ink: #1e2022;          /* texte */
+  --muted: #5c6066;        /* aides, libellés, colonne Décision */
 
-  --color-accent: #2b3f8f;
-  --color-accent-strong: #1a2a66;
-  --color-accent-soft: #e6eaf6;
-
-  --color-success: #3d6b3a;
-  --color-success-soft: #eaf3e8;
-  --color-danger: #8c1d18;
-  --color-danger-soft: #f9dedc;
-  --color-avis: #5e2463;
-  --color-avis-soft: #f3e3f4;
-  --color-pj: #7a3500;
-  --color-pj-soft: #fbe7d3;
-  --color-tag: #3a3e49;
-  --color-tag-soft: #efede7;
-  --color-agent-soft: #d8dceb;
-  --color-neutral-dot: #8a8f9c;
+  --admin: #1d4ed8;        /* administration : En instruction, n°, liens, filtre actif, messages */
+  --admin-soft: #eff6ff;
+  --usager: #15803d;       /* usager : En construction, synchro OK, PJ fournie, Accepter */
+  --usager-soft: #f0fdf4;
+  --warn: #b45309;         /* avis demandés / reçus */
+  --warn-soft: #fffbeb;
+  --bad: #b91c1c;          /* délai dépassé, PJ manquante, Refuser */
+  --bad-soft: #fef2f2;     /* seul ajout hors charte */
 
   --radius-column: 12px;
   --radius-card: 10px;
   --radius-button: 8px;
   --radius-badge: 6px;
   --target-min: 44px;
+}
+
+/* Thème sombre de la charte. Le bloc est répété pour la préférence système. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #18181b;
+    --surface: #27272a;
+    --line: #3f3f46;
+    --ink: #f3f4f6;
+    --muted: #9ca3af;
+    --admin: #60a5fa;
+    --admin-soft: #1e3a8a;
+    --usager: #4ade80;
+    --usager-soft: #14532d;
+    --warn: #f59e0b;
+    --warn-soft: #451a03;
+    --bad: #f87171;
+    --bad-soft: #450a0a;     /* hors charte, comme en clair */
+  }
 }

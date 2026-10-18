@@ -221,12 +221,12 @@ export function Board() {
                       const a = age(c, k.delaiCibleJours, now);
                       return (
                         <tr key={c.number}>
-                          <td><Link to={`/dossiers/${c.number}`} className="mono">{c.number}</Link></td>
+                          <td><Link to={`/dossiers/${c.number}`} className="num">{c.number}</Link></td>
                           <td>{c.demandeur.label}</td>
                           <td>{STATE_LABELS[c.state]}</td>
                           <td>{a.late ? <span className="card__age card__age--late">{a.label} · délai dépassé</span> : a.label}</td>
                           <td>{c.messages}</td>
-                          <td className="mono">{c.montant !== null ? formatMontant(c.montant) : "—"}</td>
+                          <td className="num">{c.montant !== null ? formatMontant(c.montant) : "—"}</td>
                         </tr>
                       );
                     })}

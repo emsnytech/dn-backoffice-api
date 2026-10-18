@@ -65,7 +65,7 @@ export function DossierDetail() {
       {dossier.error && <p className="notice" role="alert" style={{ margin: 0 }}>Impossible de charger le dossier : {dossier.error}</p>}
       {d && rev && (
         <>
-          <p className="mono" style={{ margin: "8px 0 0", color: "var(--color-accent)" }}>N° {d.number}</p>
+          <p className="num" style={{ margin: "8px 0 0", fontWeight: 600, color: "var(--admin)" }}>N° {d.number}</p>
           <h1>{demandeurName(d)}</h1>
           <StateBadge state={d.state} />
           <p className="muted">

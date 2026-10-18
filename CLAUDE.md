@@ -29,9 +29,13 @@ ni recopier leur format.
 - `fetch` natif pour GraphQL. Pas de client GraphQL tant que ce n'est pas nécessaire.
 - Serveur **Hono** qui sert d'intermédiaire avec l'API, et front **React + Vite**
   en CSS simple (plus de DSFR).
-- Toutes les couleurs, polices et dimensions sont dans `src/styles/tokens.css`. Ce
-  fichier reprend la police (Source Sans 3, installée en local via `@fontsource`) et les
-  couleurs de fond de FORM2026.
+- Toutes les couleurs, polices et dimensions sont dans `src/styles/tokens.css`, qui
+  applique la charte FORM 2026 (docs/SPEC-kanban.md § 8) avec ses noms de variables
+  (`--paper`, `--ink`, `--admin`, `--usager`…) et son thème sombre. Bleu =
+  administration, vert = usager. Police Source Sans 3, installée en local via
+  `@fontsource` plutôt que chargée depuis Google Fonts. Pas de police à chasse fixe :
+  la pile système `ui-monospace` sert aux seuls identifiants techniques, et les
+  chiffres sont en `tabular-nums`.
 - `config/demarche.json` (versionné, sans secret) : champs « objet » et « montant »
   (désignés par leur id de descripteur ou leur libellé exact) et délai cible en jours.
 

@@ -2,7 +2,9 @@ import { Link } from "react-router";
 import { STATE_LABELS, age, formatMontant, initials, type Card } from "../board.ts";
 import { TRANSITIONS, type DossierState } from "../../shared/transitions.ts";
 
-// Couleurs des étiquettes DN (LabelColorEnum) : fond clair, texte foncé.
+// Couleurs des étiquettes DN (LabelColorEnum) : fond clair, texte foncé, gardées
+// telles quelles en thème sombre. Une couleur inconnue prend le style neutre de la
+// charte (badge--tag).
 const LABEL_COLORS: Record<string, [string, string]> = {
   green_tilleul_verveine: ["#fbf6c8", "#5a5200"],
   green_bourgeon: ["#e6f4d7", "#2f5a12"],
@@ -13,7 +15,6 @@ const LABEL_COLORS: Record<string, [string, string]> = {
   pink_macaron: ["#fce4e6", "#7a2532"],
   yellow_tournesol: ["#fdf0c4", "#6a4a00"],
   brown_cafe_creme: ["#f4ead9", "#5c4320"],
-  beige_gris_galet: ["#efede7", "#3a3e49"],
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
@@ -67,8 +68,10 @@ export function KanbanCard({ card, delaiCibleJours, move }: Props) {
             {card.avisDemandes === 0 && card.avisRecus > 0 && <span className="badge badge--avis">Avis reçu</span>}
             {card.pjManquantes > 0 && <span className="badge badge--pj">{plural(card.pjManquantes, "PJ manquante", "PJ manquantes")}</span>}
             {card.labels.map((l) => {
-              const [bg, fg] = LABEL_COLORS[l.color] ?? LABEL_COLORS.beige_gris_galet;
-              return <span key={l.name} className="badge" style={{ background: bg, color: fg }}>{l.name}</span>;
+              const colors = LABEL_COLORS[l.color];
+              return colors
+                ? <span key={l.name} className="badge" style={{ background: colors[0], color: colors[1] }}>{l.name}</span>
+                : <span key={l.name} className="badge badge--tag">{l.name}</span>;
             })}
           </div>
           {agents.length > 0 && (

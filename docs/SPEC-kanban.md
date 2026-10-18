@@ -147,26 +147,28 @@ Règles :
 
 ---
 
-## 8. Design
+## 8. Design — charte FORM 2026
 
-Tirés des maquettes :
+Le back office applique la **charte FORM 2026** (dépôt public `emsnytech/form2026`, variables CSS de `index.html`). Déclarer ces jetons en variables CSS sur `:root`, avec le thème sombre de la charte sous `@media (prefers-color-scheme: dark)`.
 
-| Jeton | Valeur | Usage |
-|---|---|---|
-| fond | `#F4F3EF` | page |
-| surface | `#FFFFFF` | en-tête, cartes, fiche |
-| colonne | `#EAE8E1` | fond des colonnes |
-| bordure | `#DDDAD2` | |
-| texte | `#1B1F2A` | |
-| texte secondaire | `#4A4F5C` | aides, libellés |
-| accent | `#2B3F8F` | n° de dossier, liens, filtre actif |
-| succès | `#3D6B3A` / `#EAF3E8` | synchro, PJ fournie, accepté |
-| alerte | `#8C1D18` / `#F9DEDC` | délai dépassé, refuser |
-| avis | `#5E2463` / `#F3E3F4` | badges d'avis |
-| PJ manquante | `#7A3500` / `#FBE7D3` | |
+| Variable | Clair | Sombre | Usage dans le back office |
+|---|---|---|---|
+| `--paper` | `#fbf9f5` | `#18181b` | fond de page, fond des cartes |
+| `--surface` | `#ffffff` | `#27272a` | en-tête, colonnes, fiche |
+| `--line` | `#e2dfd7` | `#3f3f46` | bordures |
+| `--ink` | `#1e2022` | `#f3f4f6` | texte |
+| `--muted` | `#5c6066` | `#9ca3af` | textes d'aide, libellés, bordure du champ de recherche, colonne Décision |
+| `--admin` / `--admin-soft` | `#1d4ed8` / `#eff6ff` | `#60a5fa` / `#1e3a8a` | côté administration : colonne En instruction, n° de dossier, liens, filtre actif, messages |
+| `--usager` / `--usager-soft` | `#15803d` / `#f0fdf4` | `#4ade80` / `#14532d` | côté usager : colonne En construction, synchro OK, PJ fournie, Accepter |
+| `--warn` / `--warn-soft` | `#b45309` / `#fffbeb` | `#f59e0b` / `#451a03` | avis demandés / reçus |
+| `--bad` | `#b91c1c` | `#f87171` | délai dépassé, PJ manquante, Refuser |
 
-- Polices : IBM Plex Sans (texte), IBM Plex Mono (n°, montants, noms d'état API).
-- Rayons : 12 px colonnes, 10 px cartes, 8 px boutons, pastilles arrondies.
+Seul ajout hors charte : un fond doux pour `--bad`, `#fef2f2` (contraste du texte `#b91c1c` ≈ 5.9:1), absent de FORM 2026.
+
+La logique de la charte (bleu = administration, vert = usager) donne sens aux colonnes : un dossier en construction est entre les mains de l'usager, un dossier en instruction entre celles de l'administration.
+
+- Police : **Source Sans 3** (Google Fonts, graisses 400/600/700/800), pile `"Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif`, corps 17 px / 1.55 comme FORM 2026. Chiffres en `font-variant-numeric: tabular-nums`. La charte n'a pas de chasse fixe : les seuls identifiants techniques (`en_instruction`, noms de mutations) utilisent la pile système `ui-monospace, SFMono-Regular, Menlo, monospace`.
+- Rayons : 12 px colonnes, 10 px cartes (valeur dominante de FORM 2026), 8 px boutons, pastilles arrondies.
 - Cibles cliquables ≥ 44 px ; contraste texte ≥ 4.5:1 ; vrais `<button>`, `<a>`, `<label>`.
 - Largeur : colonnes de 300 px minimum ; en dessous, le tableau défile horizontalement.
 

@@ -44,7 +44,7 @@ export const COLUMNS: Column[] = [
     label: "En construction",
     apiState: "en_construction",
     hint: "Déposés, encore modifiables par le demandeur.",
-    dot: "var(--color-neutral-dot)",
+    dot: "var(--usager)",
     groups: [{ state: "en_construction" }],
   },
   {
@@ -52,7 +52,7 @@ export const COLUMNS: Column[] = [
     label: "En instruction",
     apiState: "en_instruction",
     hint: "Gelés pour le demandeur. Avis, messages et annotations en cours.",
-    dot: "var(--color-accent)",
+    dot: "var(--admin)",
     groups: [{ state: "en_instruction" }],
   },
   {
@@ -60,7 +60,7 @@ export const COLUMNS: Column[] = [
     label: "Décision",
     apiState: "terminé",
     hint: "Dossiers clos. Une décision peut être annulée en repassant le dossier en instruction.",
-    dot: "var(--color-success)",
+    dot: "var(--muted)",
     groups: [
       { state: "accepte", title: "Accepté" },
       { state: "refuse", title: "Refusé" },
