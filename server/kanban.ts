@@ -1,7 +1,7 @@
 // Données du tableau kanban (étape 1 de docs/SPEC-kanban.md) : lecture seule.
 // Le serveur réduit chaque dossier aux seules informations affichées sur une carte.
 import { readFile } from "node:fs/promises";
-import { DEMARCHE_NUMBER, gql } from "./dn.ts";
+import { DEMARCHE_NUMBER, MUTATIONS_ENABLED, gql } from "./dn.ts";
 
 type Config = { champObjet: string | null; champMontant: string | null; delaiCibleJours: number };
 
@@ -99,6 +99,7 @@ export async function fetchKanban() {
   return {
     demarche: { number: demarche.number, title: demarche.title },
     me,
+    mutationsEnabled: MUTATIONS_ENABLED,
     delaiCibleJours: config.delaiCibleJours,
     syncedAt: new Date().toISOString(),
     dossiers: nodes.map((d) => toCard(d, config)),

@@ -3,6 +3,7 @@
 import { Link, useParams } from "react-router";
 import { useApi } from "../api.ts";
 import { GeoMap } from "../GeoMap.tsx";
+import { MessageBody } from "../components/MessageBody.tsx";
 import { EVENTS, StateBadge, demandeurName, formatDate } from "../format.tsx";
 
 // Types de champs sans valeur saisie : affichés comme structure, pas comme réponse.
@@ -82,8 +83,8 @@ export function DossierDetail() {
           <h2>Messagerie · {d.messages.length}</h2>
           {d.messages.map((m: any) => (
             <div key={m.id} className="message">
-              <p className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{m.email} — {formatDate(m.createdAt)}</p>
-              <p style={{ whiteSpace: "pre-line" }}>{m.body}</p>
+              <p className="message__meta">{m.email} — {formatDate(m.createdAt)}</p>
+              <MessageBody body={m.body} />
             </div>
           ))}
 

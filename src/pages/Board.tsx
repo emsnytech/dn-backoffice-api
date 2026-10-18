@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useApi } from "../api.ts";
-import { COLUMNS, STATE_LABELS, age, filters, formatMontant, matchesSearch, type FilterId, type Kanban } from "../board.ts";
+import { COLUMNS, STATE_LABELS, age, filters, formatMontant, matchesSearch, type Card, type FilterId, type Kanban } from "../board.ts";
 import { KanbanCard } from "../components/KanbanCard.tsx";
+import { TransitionDialog, type PendingMove } from "../components/TransitionDialog.tsx";
+import { canTransition, type DossierState } from "../../shared/transitions.ts";
 
-// Transitions de l'étape 3, affichées pour information (aucune n'est déclenchée ici).
+// Transitions autorisées par DN (docs/SPEC-kanban.md § 7), rappelées sous le tableau.
 const TRANSITIONS = [
   ["Construction → Instruction", "dossierPasserEnInstruction"],
   ["Instruction → Construction", "dossierRepasserEnConstruction"],
@@ -27,6 +29,10 @@ export function Board() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterId>("tous");
   const [now, setNow] = useState(Date.now());
+  const [dragged, setDragged] = useState<Card | null>(null);
+  const [over, setOver] = useState<DossierState | null>(null);
+  const [pending, setPending] = useState<PendingMove | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
@@ -38,6 +44,75 @@ export function Board() {
   const searched = useMemo(() => (k ? k.dossiers.filter((c) => matchesSearch(c, query)) : []), [k, query]);
   const active = filterList.find((f) => f.id === filter) ?? filterList[0];
   const visible = active ? searched.filter(active.test) : searched;
+  const canMove = Boolean(k?.mutationsEnabled);
+
+  function askMove(card: Card, target: DossierState) {
+    if (canTransition(card.state, target)) setPending({ card, target });
+  }
+
+  // Pas de mise à jour optimiste : la carte ne bouge qu'une fois le tableau relu depuis DN.
+  async function confirmMove(options: { motivation: string; disableNotification: boolean }) {
+    if (!pending) return;
+    const res = await fetch(`/api/dossiers/${pending.card.number}/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: pending.target, ...options }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `Erreur ${res.status}`);
+    setPending(null);
+    setToast(
+      `Dossier n° ${body.number} : ${STATE_LABELS[body.state as DossierState] ?? body.state}` +
+        (options.disableNotification ? " (usager non notifié)." : "."),
+    );
+    kanban.reload();
+  }
+
+  // Attributs d'une zone de dépôt pour l'état cible donné.
+  function dropZone(target: DossierState) {
+    if (!canMove) return {};
+    const allowed = dragged !== null && canTransition(dragged.state, target);
+    const state = !dragged || dragged.state === target ? undefined : !allowed ? "forbidden" : over === target ? "over" : "allowed";
+    return {
+      "data-drop": state,
+      onDragOver: (e: React.DragEvent) => {
+        if (!allowed) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setOver(target);
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver((o) => (o === target ? null : o));
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        if (dragged && allowed) askMove(dragged, target);
+        setDragged(null);
+        setOver(null);
+      },
+    };
+  }
+
+  const renderCard = (c: Card) => (
+    <KanbanCard
+      key={c.number}
+      card={c}
+      delaiCibleJours={k!.delaiCibleJours}
+      move={
+        canMove
+          ? {
+              dragging: dragged?.number === c.number,
+              onDragStart: () => setDragged(c),
+              onDragEnd: () => {
+                setDragged(null);
+                setOver(null);
+              },
+              onMove: (target) => askMove(c, target),
+            }
+          : undefined
+      }
+    />
+  );
 
   return (
     <>
@@ -65,6 +140,12 @@ export function Board() {
       </header>
 
       {kanban.error && <p className="notice" role="alert">{kanban.error}</p>}
+      {toast && (
+        <div className="toast" role="status">
+          <span>{toast}</span>
+          <button type="button" onClick={() => setToast(null)}>Fermer<span className="sr-only"> le message</span></button>
+        </div>
+      )}
 
       {k && (
         <>
@@ -90,8 +171,14 @@ export function Board() {
               <div className="board">
                 {COLUMNS.map((col) => {
                   const count = visible.filter((c) => col.groups.some((g) => g.state === c.state)).length;
+                  const single = col.groups.length === 1 ? col.groups[0].state : null;
                   return (
-                    <section key={col.id} className="column" aria-labelledby={`col-${col.id}`}>
+                    <section
+                      key={col.id}
+                      className={single ? "column drop-zone" : "column"}
+                      aria-labelledby={`col-${col.id}`}
+                      {...(single ? dropZone(single) : {})}
+                    >
                       <div className="column__head">
                         <h2 id={`col-${col.id}`}>
                           <span className="dot" style={{ background: col.dot }} aria-hidden="true" />
@@ -111,11 +198,13 @@ export function Board() {
                                 <code>{g.state}</code>
                               </h3>
                             )}
-                            {cards.map((c) => <KanbanCard key={c.number} card={c} delaiCibleJours={k.delaiCibleJours} />)}
+                            <div className={single ? "group" : "group drop-zone"} {...(single ? {} : dropZone(g.state))}>
+                              {cards.map(renderCard)}
+                            </div>
                           </div>
                         );
                       })}
-                      {count === 0 && <p className="column__empty">Aucun dossier.</p>}
+                      {count === 0 && single && <p className="column__empty">Aucun dossier.</p>}
                     </section>
                   );
                 })}
@@ -149,7 +238,11 @@ export function Board() {
             <section className="transitions" aria-label="Transitions autorisées">
               <div className="transitions__intro">
                 <strong>Déplacer une carte = une mutation API</strong>
-                <span>Disponible à l'étape 3. Seuls les déplacements autorisés par DN seront proposés.</span>
+                <span>
+                  {canMove
+                    ? "Glissez une carte ou utilisez « Déplacer vers… ». Seuls les déplacements autorisés par DN sont proposés, après confirmation."
+                    : "Changements d'état désactivés sur ce serveur (DN_ENABLE_MUTATIONS)."}
+                </span>
               </div>
               <ul>
                 {TRANSITIONS.map(([label, mutation]) => (
@@ -160,6 +253,8 @@ export function Board() {
           </main>
         </>
       )}
+
+      <TransitionDialog pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMove} />
     </>
   );
 }

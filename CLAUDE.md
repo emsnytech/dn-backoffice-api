@@ -11,14 +11,16 @@ La feuille de route de référence est `docs/SPEC-kanban.md`, avec les maquettes
 `docs/maquettes/`. Ces maquettes servent de référence visuelle : ne pas les exécuter
 ni recopier leur format.
 
-1. **Étape 1 (en validation)** : kanban en lecture seule (colonnes, cartes, recherche,
+1. **Étape 1 (faite)** : kanban en lecture seule (colonnes, cartes, recherche,
    filtres, bouton Synchroniser, vue Liste). Aucune mutation.
 2. **Étape 2** : la fiche dossier en panneau latéral (champs, PJ, avis, messages).
    En attendant, `/dossiers/:number` affiche une fiche provisoire.
-3. **Étape 3** : changements d'état par glisser-déposer et par les boutons de décision.
-   Le code serveur existe déjà, mais il est désactivé tant que `DN_ENABLE_MUTATIONS`
-   n'est pas à `1`. Le front de l'ancien kanban qui faisait ces changements est dans
-   l'historique git (commit `ec3bacc`, `src/pages/Kanban.tsx`).
+3. **Étape 3 (faite, avant l'étape 2 à la demande de l'utilisateur)** :
+   changements d'état par glisser-déposer ou par le menu « Déplacer vers… » de chaque
+   carte. Une confirmation est demandée, avec la motivation et l'option « Ne pas notifier
+   l'usager ». Pas de mise à jour optimiste : le tableau est relu depuis DN après chaque
+   succès. Tout reste désactivé tant que `DN_ENABLE_MUTATIONS` n'est pas à `1`. Les
+   boutons de décision de la fiche viendront avec l'étape 2.
 
 ## Stack
 
@@ -90,9 +92,14 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   `config/demarche.json`.
 - `src/` : front React. Vite (port 5173) transmet `/api` au serveur Hono.
   Pages : kanban et vue Liste (`/`), fiche provisoire (`/dossiers/:number`).
+  Les messages DN (souvent du HTML) passent par `src/components/MessageBody.tsx`,
+  qui ne recrée qu'une liste fermée de balises.
   Règles d'affichage dans `src/board.ts`.
 - `shared/transitions.ts` : transitions d'état autorisées (utilisées par le serveur).
 - `scripts/fetch-demarche.ts` : enregistre les données brutes dans `data/`.
+- `logs/mutations.log` (ignoré par git) : une ligne JSON par tentative de changement
+  d'état (date, dossier, départ, arrivée, notification, résultat). Ni le jeton, ni le
+  texte de la motivation.
 
 ## Points d'attention sur l'API
 

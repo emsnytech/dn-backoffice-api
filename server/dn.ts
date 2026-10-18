@@ -6,6 +6,8 @@ const API_URL = process.env.DN_API_URL ?? "https://demarche.numerique.gouv.fr/ap
 const TOKEN = process.env.DN_API_TOKEN;
 // DN_DEMARCHE_NUMERO : nom utilisé par docs/SPEC-kanban.md, accepté en alias.
 export const DEMARCHE_NUMBER = Number(process.env.DN_DEMARCHE_NUMBER ?? process.env.DN_DEMARCHE_NUMERO);
+// Changements d'état autorisés seulement si DN_ENABLE_MUTATIONS=1 (étape 3 de docs/SPEC-kanban.md).
+export const MUTATIONS_ENABLED = process.env.DN_ENABLE_MUTATIONS === "1";
 
 if (!TOKEN || !DEMARCHE_NUMBER) {
   console.error("DN_API_TOKEN et DN_DEMARCHE_NUMBER doivent être définis dans .env");
@@ -184,7 +186,7 @@ export async function changeDossierState(
   const data: any = await gql(query, { input });
   const result = data[mutation];
   if (result.errors?.length) throw new TransitionError(result.errors.map((e: any) => e.message).join(" ; "));
-  return result.dossier;
+  return { dossier: result.dossier, from: dossier.state as string };
 }
 
 // Renvoie null si le dossier n'appartient pas à la démarche configurée.

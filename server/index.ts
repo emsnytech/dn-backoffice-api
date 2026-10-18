@@ -1,7 +1,8 @@
 // Serveur intermédiaire : seul à détenir le jeton. Lecture seule, sauf si DN_ENABLE_MUTATIONS=1.
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { TransitionError, changeDossierState, fetchDemarche, fetchDossier, fetchDossiers } from "./dn.ts";
+import { appendFile, mkdir } from "node:fs/promises";
+import { MUTATIONS_ENABLED, TransitionError, changeDossierState, fetchDemarche, fetchDossier, fetchDossiers } from "./dn.ts";
 import { fetchKanban } from "./kanban.ts";
 
 const app = new Hono().basePath("/api");
@@ -26,22 +27,34 @@ app.get("/dossiers/:number{[0-9]+}", async (c) => {
   return dossier ? c.json(dossier) : c.json({ error: "Dossier introuvable" }, 404);
 });
 
+// Journal local des changements d'état (docs/SPEC-kanban.md § 7) : une ligne JSON par
+// tentative. Ni jeton ni texte de motivation, qui peut contenir des données personnelles.
+const LOG_DIR = new URL("../logs/", import.meta.url);
+
+async function logMutation(entry: Record<string, unknown>) {
+  await mkdir(LOG_DIR, { recursive: true });
+  await appendFile(new URL("mutations.log", LOG_DIR), JSON.stringify({ date: new Date().toISOString(), ...entry }) + "\n");
+}
+
 // Seule route d'écriture, désactivée par défaut (étape 3 de docs/SPEC-kanban.md).
 // Le Content-Type JSON imposé empêche qu'un autre site déclenche cette route
 // depuis le navigateur (requête « simple » sans preflight).
-const MUTATIONS_ENABLED = process.env.DN_ENABLE_MUTATIONS === "1";
 
 app.post("/dossiers/:number{[0-9]+}/state", async (c) => {
   if (!MUTATIONS_ENABLED) return c.json({ error: "Changements d'état désactivés (DN_ENABLE_MUTATIONS)" }, 403);
   if (!c.req.header("content-type")?.startsWith("application/json")) {
     return c.json({ error: "Content-Type application/json attendu" }, 415);
   }
+  const number = Number(c.req.param("number"));
   const { state, motivation, disableNotification } = await c.req.json();
+  const base = { dossier: number, vers: state, notificationUsager: !disableNotification };
   try {
-    const dossier = await changeDossierState(Number(c.req.param("number")), state, { motivation, disableNotification });
-    console.log(`Dossier ${dossier.number} → ${dossier.state}`);
+    const { dossier, from } = await changeDossierState(number, state, { motivation, disableNotification });
+    await logMutation({ ...base, depuis: from, resultat: "ok" });
+    console.log(`Dossier ${dossier.number} : ${from} → ${dossier.state}`);
     return c.json(dossier);
   } catch (e) {
+    await logMutation({ ...base, resultat: "erreur", message: (e as Error).message });
     if (e instanceof TransitionError) return c.json({ error: e.message }, 422);
     throw e;
   }

@@ -21,6 +21,7 @@ export type Card = {
 export type Kanban = {
   demarche: { number: number; title: string };
   me: { id: string; email: string } | null;
+  mutationsEnabled: boolean;
   delaiCibleJours: number;
   syncedAt: string;
   dossiers: Card[];
