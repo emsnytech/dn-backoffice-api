@@ -2,8 +2,8 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { appendFile, mkdir } from "node:fs/promises";
-import { MUTATIONS_ENABLED, TransitionError, changeDossierState, fetchDemarche, fetchDossier, fetchDossiers } from "./dn.ts";
-import { fetchKanban } from "./kanban.ts";
+import { DEMARCHE_NUMBER, DN_WEB_ORIGIN, MUTATIONS_ENABLED, TransitionError, changeDossierState, fetchDemarche, fetchDossier, fetchDossiers } from "./dn.ts";
+import { demandeur, fetchKanban } from "./kanban.ts";
 
 const app = new Hono().basePath("/api");
 
@@ -24,7 +24,13 @@ app.get("/dossiers", async (c) => {
 
 app.get("/dossiers/:number{[0-9]+}", async (c) => {
   const dossier = await fetchDossier(Number(c.req.param("number")));
-  return dossier ? c.json(dossier) : c.json({ error: "Dossier introuvable" }, 404);
+  if (!dossier) return c.json({ error: "Dossier introuvable" }, 404);
+  return c.json({
+    ...dossier,
+    demandeurLabel: demandeur(dossier.demandeur).label,
+    // Page instructeur du dossier dans DN (le numéro de démarche est l'identifiant de procédure).
+    dnUrl: `${DN_WEB_ORIGIN}/procedures/${DEMARCHE_NUMBER}/dossiers/${dossier.number}`,
+  });
 });
 
 // Journal local des changements d'état (docs/SPEC-kanban.md § 7) : une ligne JSON par

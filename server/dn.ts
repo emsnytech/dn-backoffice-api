@@ -3,6 +3,8 @@
 import { MOTIVATION_ALLOWED, MOTIVATION_REQUIRED, TRANSITIONS, type DossierState } from "../shared/transitions.ts";
 
 const API_URL = process.env.DN_API_URL ?? "https://demarche.numerique.gouv.fr/api/v2/graphql";
+// Site web DN correspondant à l'API, pour le lien « Ouvrir dans DN » de la fiche.
+export const DN_WEB_ORIGIN = new URL(API_URL).origin;
 const TOKEN = process.env.DN_API_TOKEN;
 // DN_DEMARCHE_NUMERO : nom utilisé par docs/SPEC-kanban.md, accepté en alias.
 export const DEMARCHE_NUMBER = Number(process.env.DN_DEMARCHE_NUMBER ?? process.env.DN_DEMARCHE_NUMERO);
@@ -89,14 +91,39 @@ const DOSSIERS_QUERY = `
   ${DOSSIER_SUMMARY}
   ${CHAMP}`;
 
+// Fiche dossier (docs/SPEC-kanban.md § 5) : en plus du résumé, raison sociale, instructeurs,
+// fichiers des pièces justificatives (nom et taille, pas l'URL signée) et avis d'experts.
 const DOSSIER_QUERY = `
   query getDossier($number: Int!) {
     dossier(number: $number) {
       ...DossierSummary
       demarche { number }
+      datePassageEnInstruction
       motivation
-      champs { ...ChampFields }
-      annotations { ...ChampFields }
+      demandeur {
+        ... on PersonneMorale { entreprise { raisonSociale } association { titre } }
+        ... on PersonneMoraleIncomplete { siret }
+      }
+      instructeurs { id email }
+      champs {
+        ...ChampFields
+        ... on PieceJustificativeChamp { files { filename contentType byteSizeBigInt } }
+        ... on RepetitionChamp {
+          rows {
+            id
+            champs {
+              ...ChampFields
+              ... on PieceJustificativeChamp { files { filename contentType byteSizeBigInt } }
+            }
+          }
+        }
+      }
+      annotations { ...ChampFields ... on RepetitionChamp { rows { id champs { ...ChampFields } } } }
+      avis {
+        id question questionLabel questionAnswer reponse dateQuestion dateReponse
+        claimant { email }
+        expert { email }
+      }
       traitements { id event dateTraitement emailAgentTraitant motivation }
       messages { id email body createdAt }
     }

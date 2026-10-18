@@ -5,8 +5,10 @@ import { DossierDetail } from "./pages/DossierDetail.tsx";
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<Board />} />
-      <Route path="/dossiers/:number" element={<DossierDetail />} />
+      {/* La fiche s'ouvre en panneau par-dessus le tableau ; son URL reste partageable. */}
+      <Route path="/" element={<Board />}>
+        <Route path="dossiers/:number" element={<DossierDetail />} />
+      </Route>
     </Routes>
   );
 }

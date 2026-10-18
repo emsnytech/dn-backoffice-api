@@ -39,7 +39,7 @@ const KANBAN_QUERY = `
     }
   }`;
 
-function demandeur(d: any) {
+export function demandeur(d: any) {
   switch (d.__typename) {
     case "PersonnePhysique":
       return { label: [d.prenom, d.nom].filter(Boolean).join(" "), siret: null };

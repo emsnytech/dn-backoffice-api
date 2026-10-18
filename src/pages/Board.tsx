@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, Outlet } from "react-router";
 import { useApi } from "../api.ts";
 import { COLUMNS, STATE_LABELS, age, filters, formatMontant, matchesSearch, type Card, type FilterId, type Kanban } from "../board.ts";
 import { KanbanCard } from "../components/KanbanCard.tsx";
 import { TransitionDialog, type PendingMove } from "../components/TransitionDialog.tsx";
 import { canTransition, type DossierState } from "../../shared/transitions.ts";
+import type { PanelContext } from "./DossierDetail.tsx";
 
 // Transitions autorisées par DN (docs/SPEC-kanban.md § 7), rappelées sous le tableau.
 const TRANSITIONS = [
@@ -33,6 +34,8 @@ export function Board() {
   const [over, setOver] = useState<DossierState | null>(null);
   const [pending, setPending] = useState<PendingMove | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // Incrémenté après chaque changement d'état, pour que la fiche ouverte se relise.
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
@@ -66,6 +69,7 @@ export function Board() {
         (options.disableNotification ? " (usager non notifié)." : "."),
     );
     kanban.reload();
+    setVersion((v) => v + 1);
   }
 
   // Attributs d'une zone de dépôt pour l'état cible donné.
@@ -254,6 +258,7 @@ export function Board() {
         </>
       )}
 
+      <Outlet context={{ kanban: k, askMove, version } satisfies PanelContext} />
       <TransitionDialog pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMove} />
     </>
   );

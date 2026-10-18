@@ -13,14 +13,16 @@ ni recopier leur format.
 
 1. **Étape 1 (faite)** : kanban en lecture seule (colonnes, cartes, recherche,
    filtres, bouton Synchroniser, vue Liste). Aucune mutation.
-2. **Étape 2** : la fiche dossier en panneau latéral (champs, PJ, avis, messages).
-   En attendant, `/dossiers/:number` affiche une fiche provisoire.
+2. **Étape 2 (en test)** : la fiche dossier s'ouvre en panneau latéral par-dessus le
+   tableau (`/dossiers/:number`, route imbriquée, URL partageable). Onglets Demande,
+   Annotations, Messagerie, Avis et Historique, lien « Ouvrir dans DN ». Les blocs
+   répétables sont affichés ligne par ligne. Le pied de la fiche propose les décisions
+   autorisées depuis l'état courant, avec la même confirmation que le tableau.
 3. **Étape 3 (faite, avant l'étape 2 à la demande de l'utilisateur)** :
    changements d'état par glisser-déposer ou par le menu « Déplacer vers… » de chaque
    carte. Une confirmation est demandée, avec la motivation et l'option « Ne pas notifier
    l'usager ». Pas de mise à jour optimiste : le tableau est relu depuis DN après chaque
-   succès. Tout reste désactivé tant que `DN_ENABLE_MUTATIONS` n'est pas à `1`. Les
-   boutons de décision de la fiche viendront avec l'étape 2.
+   succès. Tout reste désactivé tant que `DN_ENABLE_MUTATIONS` n'est pas à `1`.
 
 ## Stack
 
@@ -60,8 +62,12 @@ Sur cet ordinateur, Claude ne travaille que dans les deux répertoires des proje
 
 Ne pas lire, chercher ni modifier de fichiers en dehors de ces répertoires, même
 pour vérifier ou comparer. Une instance de Claude peut être sollicitée pour relire
-ce projet et proposer des améliorations : elle suit les mêmes règles. Elle propose
-ses changements au lieu de les appliquer directement sur les données ou sur l'API.
+ce projet et proposer des améliorations : elle suit les mêmes règles. **Une session de
+relecture ne modifie aucun fichier du projet** (code, configuration, documentation) et
+n'écrit ni sur les données ni sur l'API. Seule exception : elle peut créer ses
+suggestions dans `docs/revues/` (un fichier Markdown daté par relecture). Elle peut
+aussi les donner dans la conversation. Les modifications sont faites par la session de développement, après
+accord de l'utilisateur.
 
 `.claude/settings.json` (versionné) interdit à toute session de Claude de lire ou de
 modifier `.env` et `data/`, avec les outils de fichiers comme avec les commandes shell
@@ -95,7 +101,8 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
 - `server/kanban.ts` : requête et mise en forme des cartes du kanban, lecture de
   `config/demarche.json`.
 - `src/` : front React. Vite (port 5173) transmet `/api` au serveur Hono.
-  Pages : kanban et vue Liste (`/`), fiche provisoire (`/dossiers/:number`).
+  Pages : kanban et vue Liste (`/`), fiche en panneau latéral (`/dossiers/:number`,
+  `src/pages/DossierDetail.tsx`).
   Les messages DN (souvent du HTML) passent par `src/components/MessageBody.tsx`,
   qui ne recrée qu'une liste fermée de balises.
   Règles d'affichage dans `src/board.ts`.
