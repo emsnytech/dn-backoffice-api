@@ -24,7 +24,9 @@ import {
   listEnveloppes,
   newEnveloppeId,
   parseEnveloppe,
+  programmesDe,
   saveEnveloppe,
+  unionProgrammes,
   type DemarcheDossiers,
   type Enveloppe,
 } from "./enveloppes.ts";
@@ -163,8 +165,8 @@ app.get("/demarches/:numero{[0-9]+}/dossiers/:number{[0-9]+}", declared, async (
   return c.json({
     ...dossier,
     demandeurLabel: demandeur(dossier.demandeur).label,
-    // Données financières (§ C) : plan de financement, lignes, taux d'aide publique, anomalies.
-    finance: f.lignes.length || f.planFinancement || f.coutTotal ? computeDossier(dossier, c.get("config")) : null,
+    // Données financières (§ C) : plan de financement, bloc de décision, taux d'aide publique, anomalies.
+    finance: f.blocDecision || f.planFinancement || f.coutTotal ? computeDossier(dossier, c.get("config")) : null,
     // Page instructeur du dossier dans DN (le numéro de démarche est l'identifiant de procédure).
     dnUrl: `${DN_WEB_ORIGIN}/procedures/${numero}/dossiers/${dossier.number}`,
   });
@@ -184,7 +186,8 @@ async function calculerEnveloppes(enveloppes: Enveloppe[]) {
       if (!config) return echecs.push({ numero, message: "démarche non déclarée" });
       try {
         const { demarche, nodes } = await fetchDemarcheDossiers(numero);
-        sources.set(numero, { config, introuvables: introuvables(config, demarche.activeRevision), dossiers: nodes });
+        const rev = demarche.activeRevision;
+        sources.set(numero, { config, introuvables: introuvables(config, rev), programmes: programmesDe(config, rev), dossiers: nodes });
       } catch (e: any) {
         if (!e.dnMessage) console.error(e);
         echecs.push({ numero, message: e.dnMessage ?? "erreur lors de l'appel à l'API Démarche Numérique" });
@@ -207,6 +210,23 @@ app.get("/enveloppes", async (c) => {
   return c.json({ enveloppes: calculees, demarches: await libelles() });
 });
 
+// Liste fermée des programmes d'enveloppe (§ C) : régimes d'aide des démarches choisies.
+async function programmesPour(numeros: number[]) {
+  const listes = await Promise.all(
+    numeros.map(async (n) => {
+      const config = await getConfig(n);
+      return config?.finances.blocDecision ? programmesDe(config, (await fetchDemarche(n)).activeRevision) : [];
+    }),
+  );
+  return unionProgrammes(listes);
+}
+
+app.get("/enveloppes/programmes", async (c) => {
+  const numeros = (c.req.query("demarches") ?? "").split(",").map(Number).filter(isNumero);
+  const declared = new Set((await listConfigs()).map((d) => d.numero));
+  return c.json({ programmes: await programmesPour(numeros.filter((n) => declared.has(n))) });
+});
+
 app.get("/enveloppes/:id", async (c) => {
   const all = await listEnveloppes();
   const e = (await calculerEnveloppes(all)).find((x) => x.id === c.req.param("id"));
@@ -221,7 +241,9 @@ async function writeEnveloppe(c: Context, id: string | null) {
   const declared = (await listConfigs()).map((d) => d.numero);
   const body = await c.req.json();
   try {
-    const e = parseEnveloppe(id ?? newEnveloppeId(String(body?.libelle ?? ""), all), body, declared, all.filter((x) => x.id !== id));
+    const choisies = Array.isArray(body?.demarches) ? body.demarches.map(Number).filter((n: number) => declared.includes(n)) : [];
+    const programmes = body?.programme ? await programmesPour(choisies) : [];
+    const e = parseEnveloppe(id ?? newEnveloppeId(String(body?.libelle ?? ""), all), body, declared, all.filter((x) => x.id !== id), programmes);
     await saveEnveloppe(e);
     console.log(`Enveloppe ${e.id} ${id ? "modifiée" : "créée"}`);
     return c.json(e, id ? 200 : 201);

@@ -2,14 +2,13 @@
 // config/demarches/<numéro>.json par démarche, versionné, sans secret. Le back office
 // n'accède qu'à ces démarches, même si le jeton en ouvre d'autres.
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { ROLES, findDescriptor, normalize, type Role } from "./parametrage.ts";
+import { ROLES, findDescriptor, memeLibelle, type Role } from "./parametrage.ts";
 
 export type ChampRef = { id: string; libelle: string };
 
-// Vocabulaire financier générique (§ B) : le millésime vaut pour la démarche, les autres
-// rôles sont regroupés en lignes de financement (plusieurs en cas de double dotation).
+// Vocabulaire financier générique (§ B) : le millésime vaut pour la démarche ; la décision
+// est portée par un bloc répétable d'annotations, une ligne par régime d'aide.
 export type Millesime = { source: "anneeDepot" } | { source: "champ"; ref: ChampRef };
-export type Programme = { source: "fixe"; valeur: string } | { source: "champ"; ref: ChampRef } | null;
 // Plan de financement saisi par l'usager : bloc répétable et ses sous-champs (§ B).
 export type PlanFinancement = {
   bloc: ChampRef;
@@ -21,17 +20,24 @@ export type PlanFinancement = {
   // Options du sous-champ financeur qui comptent comme aides publiques.
   financeursPublics: string[];
 };
-export type LigneFinancement = {
-  programme: Programme;
-  // Options du sous-champ financeur dont les montants du plan sont demandés à cette ligne.
-  financeurs: string[];
-  montantDemande: ChampRef | null;
+// Valeurs génériques auxquelles sont rapprochées les options du sous-champ statut.
+export type StatutDecision = "demande" | "propose" | "accorde";
+export const STATUTS_DECISION: StatutDecision[] = ["demande", "propose", "accorde"];
+// Bloc de décision (§ B) : le régime d'aide est le programme de la ligne, le montant est le
+// montant accordé (seule source), l'assiette et la référence d'engagement sont facultatives.
+export type BlocDecision = {
+  bloc: ChampRef;
+  regime: ChampRef;
+  montant: ChampRef;
+  statut: ChampRef;
   assiette: ChampRef | null;
-  montantAccorde: ChampRef;
-  // null : taux calculé (montant accordé ÷ assiette).
-  taux: ChampRef | null;
-  numeroEJ: ChampRef | null;
+  referenceEngagement: ChampRef | null;
+  // Option du statut (écrite comme dans DN) → valeur générique.
+  statuts: Record<string, StatutDecision>;
 };
+// Table des régimes (§ B), par option du régime d'aide : financeurs du plan dont le montant
+// demandé va à ce régime, et système d'engagement (affiché seulement, pour l'instant).
+export type Regime = { financeurs: string[]; systemeEngagement: string | null };
 export type Finances = {
   millesime: Millesime;
   coutTotal: ChampRef | null;
@@ -40,7 +46,8 @@ export type Finances = {
   // Plafond en % du cumul des aides publiques, pour le seul contrôle des anomalies (§ C).
   tauxMaxAidesPubliques: number | null;
   motifRepartition: ChampRef | null;
-  lignes: LigneFinancement[];
+  blocDecision: BlocDecision | null;
+  regimes: Record<string, Regime>;
 };
 
 export type DemarcheConfig = {
@@ -52,6 +59,8 @@ export type DemarcheConfig = {
   champs: { objet: ChampRef | null; montantDemande: ChampRef | null };
   finances: Finances;
   valideLe: string | null;
+  // Lecture seule : nombre de lignes de l'ancien réglage `lignes`, abandonné sans migration (C2a).
+  ancienReglageLignes?: number;
 };
 
 const CONFIG_DIR = new URL("../config/demarches/", import.meta.url);
@@ -64,10 +73,13 @@ export async function getConfig(numero: number): Promise<DemarcheConfig | null> 
   try {
     const config = JSON.parse(await readFile(fileFor(numero), "utf8"));
     if (config.numero !== numero) return null;
-    // Fiches enregistrées avant l'étape C1 : réglages financiers ajoutés depuis.
-    const finances = { ...defaultFinances(), ...config.finances };
-    finances.lignes = finances.lignes.map(({ tauxMax, ...l }: any) => ({ financeurs: [], ...l }));
-    return { ...config, finances };
+    // Fiches enregistrées avant C2a : réglages financiers ajoutés depuis ; l'ancien réglage
+    // `lignes` est abandonné sans migration, la fiche de paramétrage le signale.
+    const { lignes, ...rest } = config.finances ?? {};
+    const finances = { ...defaultFinances(), ...rest };
+    const out: DemarcheConfig = { ...config, finances };
+    if (Array.isArray(lignes) && lignes.length) out.ancienReglageLignes = lignes.length;
+    return out;
   } catch (e: any) {
     if (e.code === "ENOENT") return null;
     throw e;
@@ -88,7 +100,8 @@ const defaultFinances = (): Finances => ({
   programmeSouhaite: null,
   tauxMaxAidesPubliques: null,
   motifRepartition: null,
-  lignes: [],
+  blocDecision: null,
+  regimes: {},
 });
 
 export const defaultConfig = (numero: number, libelle: string): DemarcheConfig => ({
@@ -103,7 +116,7 @@ export const defaultConfig = (numero: number, libelle: string): DemarcheConfig =
 
 export class ConfigError extends Error {}
 
-const MAX_LIGNES = 10;
+const MAX_REGIMES = 50;
 
 // Le front n'envoie que l'identifiant du champ : le serveur vérifie qu'il existe dans la
 // révision publiée et qu'il a un type accepté pour ce rôle, puis reprend le libellé de DN.
@@ -124,40 +137,31 @@ function parseMillesime(v: any, revision: any): Millesime {
   throw new ConfigError("Source du millésime invalide");
 }
 
-function parseProgramme(v: any, revision: any): Programme {
-  if (v === null || v === undefined) return null;
-  if (v.source === "fixe") {
-    const valeur = typeof v.valeur === "string" ? v.valeur.trim() : "";
-    if (!valeur || valeur.length > 80) throw new ConfigError("Le programme fixe doit faire entre 1 et 80 caractères");
-    return { source: "fixe", valeur };
-  }
-  if (v.source === "champ") return { source: "champ", ref: champRef(v.ref, "programme", revision)! };
-  throw new ConfigError("Programme invalide");
-}
-
-// Valeurs choisies parmi les options du sous-champ financeur (liste fermée), écrites comme dans DN.
-function parseOptions(v: unknown, options: string[], name: string): string[] {
+// Valeurs choisies parmi les options d'une liste (liste fermée), écrites comme dans DN.
+function parseOptions(v: unknown, options: string[], name: string, liste = "du sous-champ financeur"): string[] {
   if (v === null || v === undefined) return [];
   if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) throw new ConfigError(`${name} invalides`);
   const out: string[] = [];
   for (const x of v as string[]) {
-    const option = options.find((o) => normalize(o).trim() === normalize(x).trim());
-    if (!option) throw new ConfigError(`${name} : « ${x} » n'est pas une option du sous-champ financeur`);
+    const option = options.find((o) => memeLibelle(o, x));
+    if (!option) throw new ConfigError(`${name} : « ${x} » n'est pas une option ${liste}`);
     if (!out.includes(option)) out.push(option);
   }
   return out;
+}
+
+// Sous-champ d'un bloc répétable : il doit appartenir au bloc désigné.
+function sousChamp(value: unknown, role: Role, revision: any, bloc: ChampRef) {
+  const r = champRef(value, role, revision);
+  if (r && findDescriptor(revision, r.id)?.blocId !== bloc.id) throw new ConfigError(`« ${r.libelle} » n'appartient pas au bloc « ${bloc.libelle} »`);
+  return r;
 }
 
 function parsePlan(v: any, revision: any): PlanFinancement | null {
   if (v === null || v === undefined) return null;
   const bloc = champRef(v.bloc, "planBloc", revision);
   if (!bloc) return null;
-  // Les sous-champs doivent appartenir au bloc désigné.
-  const sous = (value: unknown, role: Role) => {
-    const r = champRef(value, role, revision);
-    if (r && findDescriptor(revision, r.id)?.blocId !== bloc.id) throw new ConfigError(`« ${r.libelle} » n'appartient pas au bloc « ${bloc.libelle} »`);
-    return r;
-  };
+  const sous = (value: unknown, role: Role) => sousChamp(value, role, revision, bloc);
   const financeur = sous(v.financeur, "planFinanceur");
   const montant = sous(v.montant, "planMontant");
   if (!financeur || !montant) throw new ConfigError("Plan de financement : désignez les sous-champs financeur et montant");
@@ -172,28 +176,57 @@ function parsePlan(v: any, revision: any): PlanFinancement | null {
   };
 }
 
-function parseLigne(v: any, i: number, revision: any, plan: PlanFinancement | null): LigneFinancement {
-  if (typeof v !== "object" || v === null) throw new ConfigError(`Ligne de financement ${i + 1} invalide`);
-  const montantAccorde = champRef(v.montantAccorde, "montantAccorde", revision);
-  if (!montantAccorde) throw new ConfigError(`Ligne de financement ${i + 1} : désignez son montant accordé`);
-  if (Array.isArray(v.financeurs) && v.financeurs.length && !plan) {
-    throw new ConfigError(`Ligne de financement ${i + 1} : des financeurs supposent un plan de financement`);
+function parseBlocDecision(v: any, revision: any): BlocDecision | null {
+  if (v === null || v === undefined) return null;
+  const bloc = champRef(v.bloc, "decisionBloc", revision);
+  if (!bloc) return null;
+  const sous = (value: unknown, role: Role) => sousChamp(value, role, revision, bloc);
+  const regime = sous(v.regime, "decisionRegime");
+  const montant = sous(v.montant, "decisionMontant");
+  const statut = sous(v.statut, "decisionStatut");
+  if (!regime || !montant || !statut) throw new ConfigError("Bloc de décision : désignez les sous-champs régime d'aide, montant et statut");
+  if (regime.id === statut.id) throw new ConfigError("Bloc de décision : le régime d'aide et le statut doivent être deux sous-champs différents");
+  const assiette = sous(v.assiette, "decisionAssiette");
+  if (assiette && assiette.id === montant.id) throw new ConfigError("Bloc de décision : l'assiette et le montant doivent être deux sous-champs différents");
+  // Valeurs de statut : chaque clé est une option du sous-champ statut.
+  const options = findDescriptor(revision, statut.id)?.options ?? [];
+  const statuts: Record<string, StatutDecision> = {};
+  if (v.statuts !== undefined && v.statuts !== null && (typeof v.statuts !== "object" || Array.isArray(v.statuts))) throw new ConfigError("Valeurs de statut invalides");
+  for (const [k, val] of Object.entries(v.statuts ?? {})) {
+    if (val === null || val === "") continue;
+    const option = options.find((o) => memeLibelle(o, k));
+    if (!option) throw new ConfigError(`Valeurs de statut : « ${k} » n'est pas une option du sous-champ statut`);
+    if (!STATUTS_DECISION.includes(val as StatutDecision)) throw new ConfigError(`Valeur de statut invalide pour « ${option} »`);
+    statuts[option] = val as StatutDecision;
   }
-  const options = plan ? (findDescriptor(revision, plan.financeur.id)?.options ?? []) : [];
-  const financeurs = parseOptions(v.financeurs, options, `Ligne de financement ${i + 1}, financeurs`);
-  const montantDemande = champRef(v.montantDemande, "montantDemande", revision);
-  if (financeurs.length && montantDemande) {
-    throw new ConfigError(`Ligne de financement ${i + 1} : le montant demandé vient soit des financeurs du plan, soit d'un champ, pas des deux`);
+  return { bloc, regime, montant, statut, assiette, referenceEngagement: sous(v.referenceEngagement, "decisionReference"), statuts };
+}
+
+// Table des régimes : chaque clé est une option du régime d'aide ; les financeurs sont des
+// options du sous-champ financeur du plan.
+function parseRegimes(v: any, bloc: BlocDecision | null, plan: PlanFinancement | null, revision: any): Record<string, Regime> {
+  if (v === null || v === undefined) return {};
+  if (typeof v !== "object" || Array.isArray(v)) throw new ConfigError("Table des régimes invalide");
+  const entries = Object.entries(v);
+  if (!entries.length) return {};
+  if (!bloc) throw new ConfigError("La table des régimes suppose un bloc de décision");
+  if (entries.length > MAX_REGIMES) throw new ConfigError(`${MAX_REGIMES} régimes au plus`);
+  const options = findDescriptor(revision, bloc.regime.id)?.options ?? [];
+  const financeurs = plan ? (findDescriptor(revision, plan.financeur.id)?.options ?? []) : [];
+  const out: Record<string, Regime> = {};
+  for (const [k, r] of entries as [string, any][]) {
+    const option = options.find((o) => memeLibelle(o, k));
+    if (!option) throw new ConfigError(`Table des régimes : « ${k} » n'est pas une option du régime d'aide`);
+    if (typeof r !== "object" || r === null) throw new ConfigError(`Table des régimes : « ${option} » invalide`);
+    if (Array.isArray(r.financeurs) && r.financeurs.length && !plan) throw new ConfigError(`Régime « ${option} » : des financeurs supposent un plan de financement`);
+    const systeme = typeof r.systemeEngagement === "string" ? r.systemeEngagement.trim() : "";
+    if (systeme.length > 80) throw new ConfigError(`Régime « ${option} » : système d'engagement de 80 caractères au plus`);
+    out[option] = {
+      financeurs: parseOptions(r.financeurs, financeurs, `Régime « ${option} », financeurs`),
+      systemeEngagement: systeme || null,
+    };
   }
-  return {
-    programme: parseProgramme(v.programme, revision),
-    financeurs,
-    montantDemande,
-    assiette: champRef(v.assiette, "assiette", revision),
-    montantAccorde,
-    taux: champRef(v.taux, "taux", revision),
-    numeroEJ: champRef(v.numeroEJ, "numeroEJ", revision),
-  };
+  return out;
 }
 
 function parseTauxMax(v: unknown): number | null {
@@ -205,15 +238,8 @@ function parseTauxMax(v: unknown): number | null {
 
 function parseFinances(v: any, revision: any): Finances {
   if (v === null || v === undefined) return defaultFinances();
-  const lignes = Array.isArray(v.lignes) ? v.lignes : [];
-  if (lignes.length > MAX_LIGNES) throw new ConfigError(`${MAX_LIGNES} lignes de financement au plus`);
   const plan = parsePlan(v.planFinancement, revision);
-  const parsed = lignes.map((l: any, i: number) => parseLigne(l, i, revision, plan));
-  if (parsed.length > 1 && parsed.some((l: LigneFinancement) => !l.programme)) {
-    throw new ConfigError("Avec plusieurs lignes de financement, chaque ligne doit avoir un programme");
-  }
-  const ids = parsed.map((l: LigneFinancement) => l.montantAccorde.id);
-  if (new Set(ids).size !== ids.length) throw new ConfigError("Deux lignes de financement ne peuvent pas partager le même montant accordé");
+  const blocDecision = parseBlocDecision(v.blocDecision, revision);
   return {
     millesime: parseMillesime(v.millesime, revision),
     coutTotal: champRef(v.coutTotal, "coutTotal", revision),
@@ -221,7 +247,8 @@ function parseFinances(v: any, revision: any): Finances {
     programmeSouhaite: champRef(v.programmeSouhaite, "programmeSouhaite", revision),
     tauxMaxAidesPubliques: parseTauxMax(v.tauxMaxAidesPubliques),
     motifRepartition: champRef(v.motifRepartition, "motifRepartition", revision),
-    lignes: parsed,
+    blocDecision,
+    regimes: parseRegimes(v.regimes, blocDecision, plan, revision),
   };
 }
 
@@ -238,7 +265,7 @@ export function parseConfig(numero: number, body: any, revision: any): DemarcheC
   const montantDemande = champRef(body.champs?.montantDemande, "montantDemande", revision);
   // Le sous-champ montant du plan additionnerait tous les financeurs (§ B).
   if (montantDemande && montantDemande.id === finances.planFinancement?.montant.id) {
-    throw new ConfigError("Le montant demandé des cartes ne peut pas être le montant du plan de financement : il est calculé à partir des financeurs des lignes");
+    throw new ConfigError("Le montant demandé des cartes ne peut pas être le montant du plan de financement : il est calculé à partir de la table des régimes");
   }
   return {
     numero,

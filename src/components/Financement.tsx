@@ -1,5 +1,6 @@
 // Données financières d'un dossier, dans l'onglet Demande de la fiche (docs/SPEC-multi-demarches.md
-// § C) : plan de financement, taux d'aide publique, lignes de financement, motif de répartition.
+// § C) : plan de financement, taux d'aide publique, lignes de financement (une par régime d'aide,
+// lues dans le bloc de décision), motif de répartition.
 import { STATUTS_LIGNE, formatCentimes, formatPct, type DossierFinance } from "../finances.ts";
 
 export function Financement({ f }: { f: DossierFinance }) {
@@ -40,7 +41,7 @@ export function Financement({ f }: { f: DossierFinance }) {
             <dt>Taux d'aide publique cumulé prévisionnel</dt><dd className="num">{formatPct(f.taux.cumule)}</dd>
             {f.taux.obtenues !== null && <><dt>dont aides obtenues</dt><dd className="num">{formatPct(f.taux.obtenues)}</dd></>}
             <dt>Taux après décision</dt>
-            <dd className="num">{f.taux.apresDecision !== null ? formatPct(f.taux.apresDecision) : <span className="muted">aucun montant accordé renseigné</span>}</dd>
+            <dd className="num">{f.taux.apresDecision !== null ? formatPct(f.taux.apresDecision) : <span className="muted">aucun montant saisi dans le bloc de décision</span>}</dd>
           </dl>
         </>
       )}
@@ -53,17 +54,32 @@ export function Financement({ f }: { f: DossierFinance }) {
           <h3>Lignes de financement</h3>
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Programme</th><th className="num">Demandé</th><th className="num">Accordé</th><th className="num">Assiette</th><th className="num">Taux</th><th>N° d'EJ</th><th>Statut</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Régime d'aide</th><th>Statut saisi</th><th>Statut financier</th><th className="num">Demandé</th><th className="num">Montant</th>
+                  <th className="num">Assiette</th><th className="num">Taux</th><th>Référence d'engagement</th>
+                </tr>
+              </thead>
               <tbody>
                 {f.lignes.map((l) => (
                   <tr key={l.index}>
-                    <td>{l.programme ?? "—"}</td>
+                    <td>
+                      {l.programme ?? "—"}
+                      <span className="field__hint"> {l.rangs.length ? `(ligne${l.rangs.length > 1 ? "s" : ""} ${l.rangs.join(", ")} du bloc)` : "(pas encore dans le bloc)"}</span>
+                    </td>
+                    <td>{l.statutSaisi ?? "—"}</td>
+                    <td>
+                      {STATUTS_LIGNE[l.statut]}
+                      {l.aNotifier && <span className="badge badge--msg finance__public">Décidé, à notifier</span>}
+                    </td>
                     <td className="num">{formatCentimes(l.demande)}</td>
                     <td className="num">{formatCentimes(l.accorde)}</td>
                     <td className="num">{formatCentimes(l.assiette)}</td>
                     <td className="num">{formatPct(l.taux)}</td>
-                    <td>{l.numeroEJ ?? "—"}</td>
-                    <td>{STATUTS_LIGNE[l.statut]}</td>
+                    <td>
+                      {l.referenceEngagement ?? "—"}
+                      {l.systemeEngagement && <span className="field__hint"> ({l.systemeEngagement})</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -71,7 +87,7 @@ export function Financement({ f }: { f: DossierFinance }) {
           </div>
           {f.nonAffecte.map((n, i) => (
             <p key={i} className="field__hint">
-              Demandé non affecté : {formatCentimes(n.montant)} ({n.financeur}), faute de programme souhaité correspondant à l'une des lignes.
+              Demandé non affecté : {formatCentimes(n.montant)}{n.financeur ? ` (${n.financeur})` : ""}, partagé entre {n.regimes.join(", ")}, faute de programme souhaité correspondant à l'un de ces régimes.
             </p>
           ))}
           <p className="field__hint">

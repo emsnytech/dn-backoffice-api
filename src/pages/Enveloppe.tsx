@@ -66,6 +66,7 @@ export function Enveloppe() {
               <section className="settings__section" aria-labelledby="s-autres">
                 <h2 id="s-autres">Autres indicateurs</h2>
                 <dl className="fields">
+                  <dt>Régime</dt><dd>{e.programme ?? "Tous régimes"}</dd>
                   <dt>Demandé</dt><dd className="num">{formatCentimes(e.indicateurs.demande)}</dd>
                   <dt>Demandé non affecté</dt>
                   <dd className="num">
@@ -73,7 +74,7 @@ export function Enveloppe() {
                     {e.indicateurs.dossiersNonAffecte.length > 0 && (
                       <span className="field__hint"> — dossiers {e.indicateurs.dossiersNonAffecte.map((n, i) => (
                         <span key={n}>{i > 0 && ", "}n° {n}</span>
-                      ))}. Montant d'un financeur partagé que le programme souhaité n'a pas permis d'affecter ; il n'entre ni dans le demandé ni dans le reste.</span>
+                      ))}. Montant d'un financeur partagé par plusieurs régimes que le programme souhaité n'a pas permis d'affecter ; il n'entre ni dans le demandé ni dans le reste.</span>
                     )}
                   </dd>
                   <dt>Dossiers imputés</dt><dd className="num">{e.indicateurs.dossiers}</dd>
@@ -101,7 +102,7 @@ export function Enveloppe() {
                 {e.imputations.length === 0 ? <p className="muted">Aucun dossier imputé.</p> : (
                   <div className="table-wrap">
                     <table className="table">
-                      <thead><tr><th>Dossier</th><th>Démarche</th><th>Programme</th><th>Statut</th><th className="num">Demandé</th><th className="num">Accordé</th><th>Engagé</th></tr></thead>
+                      <thead><tr><th>Dossier</th><th>Démarche</th><th>Régime</th><th>Statut</th><th className="num">Demandé</th><th className="num">Accordé</th><th>Engagé</th></tr></thead>
                       <tbody>
                         {e.imputations.map((x) => (
                           <tr key={`${x.demarche}-${x.dossier}-${x.ligne}`}>

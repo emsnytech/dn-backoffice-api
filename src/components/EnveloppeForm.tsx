@@ -1,6 +1,6 @@
 // Création ou modification d'une enveloppe (docs/SPEC-multi-demarches.md § C). Montant saisi
 // en euros ; le serveur le valide et le stocke en centimes.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 // Montant saisi à la française : « 50 000 € », « 1.500.000 », « 12 500,50 ». null si illisible.
 export function parseEuros(saisie: string): number | null {
@@ -11,7 +11,7 @@ export function parseEuros(saisie: string): number | null {
   return Number(s);
 }
 
-type Initial = { libelle: string; millesime: number; montantCentimes: number; demarches: number[]; parent: string | null };
+type Initial = { libelle: string; programme: string | null; millesime: number; montantCentimes: number; demarches: number[]; parent: string | null };
 type Props = {
   id?: string;
   initial?: Initial;
@@ -29,6 +29,20 @@ export function EnveloppeForm({ id, initial, demarchesInitiales, demarches, autr
   const [montant, setMontant] = useState(initial ? String(initial.montantCentimes / 100) : "");
   const [choisies, setChoisies] = useState<number[]>(initial?.demarches ?? demarchesInitiales ?? []);
   const [parent, setParent] = useState(initial?.parent ?? "");
+  const [programme, setProgramme] = useState(initial?.programme ?? "");
+  // Liste fermée : régimes d'aide des démarches cochées (§ C), relue à chaque changement.
+  const [programmes, setProgrammes] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!choisies.length) return setProgrammes([]);
+    let stale = false;
+    fetch(`/api/enveloppes/programmes?demarches=${choisies.join(",")}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Erreur ${r.status}`))))
+      .then((b) => !stale && setProgrammes(b.programmes))
+      .catch(() => !stale && setProgrammes(null));
+    return () => {
+      stale = true;
+    };
+  }, [choisies.join(",")]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,7 +59,7 @@ export function EnveloppeForm({ id, initial, demarchesInitiales, demarches, autr
       const res = await fetch(id ? `/api/enveloppes/${id}` : "/api/enveloppes", {
         method: id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ libelle, millesime: Number(millesime), montant: euros, demarches: choisies, parent: parent || null }),
+        body: JSON.stringify({ libelle, millesime: Number(millesime), montant: euros, demarches: choisies, programme: programme || null, parent: parent || null }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `Erreur ${res.status}`);
@@ -86,8 +100,19 @@ export function EnveloppeForm({ id, initial, demarchesInitiales, demarches, autr
         {!choisies.length && <p className="field__hint">Cochez au moins une démarche pour pouvoir enregistrer.</p>}
       </fieldset>
       <div className="field">
-        <span className="field__label">Programme</span>
-        <p className="field__hint">Tous programmes. Le choix d'un programme, dans une liste fermée, arrive avec l'étape C2.</p>
+        <label htmlFor="env-programme">Régime d'aide</label>
+        <select id="env-programme" className="input" value={programme} onChange={(e) => setProgramme(e.target.value)} aria-describedby="env-programme-hint">
+          <option value="">Tous régimes</option>
+          {programme && programmes && !programmes.includes(programme) && <option value={programme}>{programme} (absent des démarches cochées)</option>}
+          {programmes?.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <p id="env-programme-hint" className="field__hint">
+          {programmes === null
+            ? "Liste des régimes indisponible (Démarche Numérique injoignable)."
+            : programmes.length
+              ? "Options du sous-champ « régime d'aide » du bloc de décision des démarches cochées."
+              : "Aucun régime : les démarches cochées n'ont pas de bloc de décision dans leur paramétrage."}
+        </p>
       </div>
       <div className="field">
         <label htmlFor="env-parent">Enveloppe mère (délégation, facultatif)</label>

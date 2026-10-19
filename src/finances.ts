@@ -7,7 +7,7 @@ export const STATUTS_LIGNE: Record<StatutLigne, string> = {
   demande: "Demandé",
   programme: "Programmé",
   accepte: "Accepté",
-  non_retenu: "Non retenu sur ce programme",
+  non_retenu: "Non retenu sur ce régime",
   hors_calcul: "Hors calcul",
   anomalie: "Anomalie",
 };
@@ -60,8 +60,22 @@ export type DossierFinance = {
   plan: { lignes: { financeur: string | null; montant: number | null; statut: string | null; public: boolean }[]; total: number; totalPublic: number } | null;
   programmeSouhaite: string | null;
   motifRepartition: string | null;
-  lignes: { index: number; programme: string | null; demande: number | null; accorde: number | null; assiette: number | null; taux: number | null; numeroEJ: string | null; statut: StatutLigne }[];
-  nonAffecte: { financeur: string; montant: number; lignes: number[] }[];
+  lignes: {
+    index: number;
+    // Régime d'aide de la ligne.
+    programme: string | null;
+    rangs: number[];
+    statutSaisi: string | null;
+    demande: number | null;
+    accorde: number | null;
+    assiette: number | null;
+    taux: number | null;
+    referenceEngagement: string | null;
+    systemeEngagement: string | null;
+    statut: StatutLigne;
+    aNotifier: boolean;
+  }[];
+  nonAffecte: { financeur: string | null; montant: number; regimes: string[] }[];
   taux: { cumule: number | null; obtenues: number | null; apresDecision: number | null };
   anomalies: Anomalie[];
 };

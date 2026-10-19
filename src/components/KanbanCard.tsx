@@ -69,6 +69,7 @@ export function KanbanCard({ card, to, delaiCibleJours, move }: Props) {
             {card.avisDemandes > 0 && <span className="badge badge--avis">Avis demandé</span>}
             {card.avisDemandes === 0 && card.avisRecus > 0 && <span className="badge badge--avis">Avis reçu</span>}
             {card.pjManquantes > 0 && <span className="badge badge--pj">{plural(card.pjManquantes, "PJ manquante", "PJ manquantes")}</span>}
+            {card.financement.some((l) => l.aNotifier) && <span className="badge badge--msg">Décidé, à notifier</span>}
             {card.labels.map((l) => {
               const colors = LABEL_COLORS[l.color];
               return colors

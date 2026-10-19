@@ -12,7 +12,9 @@ const VALUES = `
   __typename id champDescriptorId label stringValue
   ${NUMBER_VALUE}
   ... on RepetitionChamp { rows { champs { __typename champDescriptorId stringValue ${NUMBER_VALUE} } } }`;
-const REVISION_IDS = `__typename id label ... on RepetitionChampDescriptor { champDescriptors { __typename id label } }`;
+// Options des listes : liste fermée des régimes d'aide (programmes d'enveloppe, § C).
+const OPTIONS = `... on DropDownListChampDescriptor { options }`;
+const REVISION_IDS = `__typename id label ${OPTIONS} ... on RepetitionChampDescriptor { champDescriptors { __typename id label ${OPTIONS} } }`;
 
 const KANBAN_QUERY = `
   query getKanban($number: Int!, $after: String) {
@@ -87,8 +89,9 @@ function numberValue(champs: any[], ref: ChampRef | null) {
 function toCard(d: any, config: DemarcheConfig) {
   const objet = findChamp(d.champs, config.champs.objet);
   const pj = d.champs.filter((c: any) => c.__typename === "PieceJustificativeChamp");
-  // Avec un plan de financement, le montant des cartes est le demandé sur nos programmes (§ B).
-  const fin = config.finances.lignes.length ? computeDossier(d, config) : null;
+  // Avec un plan de financement, le montant des cartes est le demandé sur nos régimes (§ B).
+  const f = config.finances;
+  const fin = f.blocDecision || f.planFinancement ? computeDossier(d, config) : null;
   return {
     number: d.number,
     state: d.state,
@@ -98,9 +101,9 @@ function toCard(d: any, config: DemarcheConfig) {
     demandeur: demandeur(d.demandeur),
     objet: objet?.stringValue || null,
     montant: fin?.demandeNosProgrammes != null ? fin.demandeNosProgrammes / 100 : numberValue(d.champs, config.champs.montantDemande),
-    // Montant accordé par ligne de financement (en euros), et statut financier.
+    // Montant accordé par régime (en euros), statut financier et repère « décidé, à notifier ».
     financement: fin
-      ? fin.lignes.map((l) => ({ programme: l.programme, accorde: l.accorde === null ? null : l.accorde / 100, statut: l.statut }))
+      ? fin.lignes.map((l) => ({ programme: l.programme, accorde: l.accorde === null ? null : l.accorde / 100, statut: l.statut, aNotifier: l.aNotifier }))
       : [],
     instructeurs: d.instructeurs,
     messages: d.messages.length,

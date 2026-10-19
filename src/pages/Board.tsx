@@ -57,6 +57,8 @@ export function Board({ numero }: { numero: string }) {
   const active = filterList.find((f) => f.id === filter) ?? filterList[0];
   const visible = active ? searched.filter(active.test) : searched;
   const canMove = Boolean(k?.mutationsEnabled);
+  // Dossiers en instruction dont une ligne est « accordé » : décidés, à notifier (§ C).
+  const aNotifier = k ? k.dossiers.filter((c) => c.financement.some((l) => l.aNotifier)).length : 0;
 
   // Reste de chaque enveloppe après acceptation : les montants accordés pas encore acceptés s'y ajoutent.
   function acceptImpact(card: Card): AcceptImpact | null {
@@ -199,6 +201,11 @@ export function Board({ numero }: { numero: string }) {
         <section className="envelope-banner" aria-label="Enveloppes alimentées par cette démarche">
           {env.data.enveloppes.map((e) => <div key={e.id}><Jauge e={e} /></div>)}
         </section>
+      )}
+      {aNotifier > 0 && (
+        <p className="field__hint" role="status">
+          {aNotifier} dossier{aNotifier > 1 ? "s" : ""} décidé{aNotifier > 1 ? "s" : ""}, à notifier (en instruction, ligne « accordé ») : repère « Décidé, à notifier » sur la carte.
+        </p>
       )}
       {env.data && env.data.enveloppes.length === 0 && (
         <p className="field__hint">

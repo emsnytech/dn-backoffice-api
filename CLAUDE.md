@@ -34,15 +34,20 @@ Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
 - **B (en test)** : fiche de paramétrage (`/demarches/:numero/parametres`), pré-remplie
   par des propositions avec leur raison, ouverte aussi à l'ajout d'une démarche (rien
   n'est déclaré avant l'enregistrement). Vocabulaire financier générique : millésime,
-  lignes de financement (programme, montants demandé et accordé, assiette, taux, taux
-  maximal, n° d'EJ).
+  plan de financement, bloc de décision, table des régimes.
 - **C1 (en test)** : enveloppes (`config/enveloppes/<id>.json`, pages `/enveloppes` et
   `/enveloppes/:id`), imputation par démarche et millésime, indicateurs (demandé,
   programmé, accepté, engagé, reste, demandé non affecté), anomalies, jauges sur le
   kanban et l'accueil, montant accordé sur les cartes et dans la confirmation
   « Accepter ». Plan de financement, coût total, programme souhaité, taux d'aide publique
   et motif de répartition dans la fiche de paramétrage et l'onglet Demande.
-- **C2, C3, D** : à faire, chacune après validation de la précédente.
+- **C2a (en test)** : bloc de décision (bloc répétable d'annotations : régime d'aide = programme,
+  montant = seule source du montant accordé, statut rapproché de demandé / proposé / accordé,
+  assiette, référence d'engagement), table des régimes (financeurs, système d'engagement),
+  arbitrage état DN / statut de ligne (désaccord = anomalie), repère « décidé, à notifier »,
+  programme d'enveloppe choisi parmi les régimes. Lecture seule.
+- **C2b** (saisie de la décision par `dossierModifierAnnotations`), **C3, D** : à faire, chacune
+  après validation de la précédente.
 
 ## Stack
 
@@ -133,13 +138,15 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   - `POST /api/demarches/:numero/dossiers/:n/state` (désactivée par défaut) ;
   - `GET /api/dossiers/:n/demarche`, pour rediriger les anciennes adresses `/dossiers/:n` ;
   - `GET /api/enveloppes` (avec indicateurs), `POST` ; `GET`, `PUT`, `DELETE /api/enveloppes/:id` ;
+    `GET /api/enveloppes/programmes?demarches=…` (liste fermée des régimes d'aide) ;
     `GET /api/demarches/:numero/enveloppes` (bandeau du kanban).
 - `server/config.ts` : lecture, validation et écriture des fiches de `config/demarches/`,
   migration depuis l'ancienne configuration à une démarche.
 - `server/parametrage.ts` : rôles de la fiche (types acceptés, mots-clés), propositions
   automatiques, champs désignés introuvables dans la révision publiée.
 - `server/finances.ts` : données financières d'un dossier (millésime, plan de financement,
-  montants par ligne, statut financier, taux d'aide publique, anomalies), en centimes.
+  lignes par régime lues dans le bloc de décision, statut financier, taux d'aide publique,
+  anomalies), en centimes.
 - `server/enveloppes.ts` : lecture, validation et écriture de `config/enveloppes/`,
   imputation des dossiers et indicateurs par enveloppe.
 - `server/kanban.ts` : requête et mise en forme des cartes du kanban, résumé de l'accueil.
@@ -184,8 +191,10 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
 - Un champ d'un bloc répétable (`RepetitionChamp.rows[].champs`) peut être désigné dans la
   fiche (rôles numériques du formulaire) : sa valeur est la somme des lignes renseignées.
   C'est le cas du montant demandé de la démarche 154701.
-- DN a un type `EngagementJuridiqueChampDescriptor` (champ `engagementJuridique { montantEngage
-  montantPaye }`) : il est accepté pour le n° d'EJ, en plus des annotations texte.
+- DN a un type `EngagementJuridiqueChampDescriptor` : il n'est pas utilisé. La référence
+  d'engagement est un sous-champ texte libre du bloc de décision.
+- Les libellés (régime, programme souhaité, financeur, statut) se comparent avec `memeLibelle`
+  (`server/parametrage.ts`) : casse, accents, espaces et apostrophes ‘ ’ normalisés.
 - Une liste déroulante n'est proposée comme millésime que si toutes ses options sont des années.
 - Champs Carte : demander `geometry { type coordinates }` (du GeoJSON). Ils sont affichés
   avec Leaflet sur le fond Plan IGN de la Géoplateforme, public et sans clé.

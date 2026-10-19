@@ -8,16 +8,12 @@ import { DEMARCHE_STATES, demarchePath } from "../board.ts";
 import { formatDate } from "../format.tsx";
 
 type ChampRef = { id: string; libelle: string };
-type Programme = { source: "fixe"; valeur: string } | { source: "champ"; ref: ChampRef } | null;
-type Ligne = {
-  programme: Programme;
-  financeurs: string[];
-  montantDemande: ChampRef | null;
-  assiette: ChampRef | null;
-  montantAccorde: ChampRef;
-  taux: ChampRef | null;
-  numeroEJ: ChampRef | null;
+type StatutDecision = "demande" | "propose" | "accorde";
+type BlocDecision = {
+  bloc: ChampRef; regime: ChampRef; montant: ChampRef; statut: ChampRef;
+  assiette: ChampRef | null; referenceEngagement: ChampRef | null; statuts: Record<string, StatutDecision>;
 };
+type Regime = { financeurs: string[]; systemeEngagement: string | null };
 type Plan = { bloc: ChampRef; financeur: ChampRef; montant: ChampRef; statut: ChampRef | null; annee: ChampRef | null; financeursPublics: string[] };
 type Config = {
   libelle: string;
@@ -31,16 +27,22 @@ type Config = {
     programmeSouhaite: ChampRef | null;
     tauxMaxAidesPubliques: number | null;
     motifRepartition: ChampRef | null;
-    lignes: Ligne[];
+    blocDecision: BlocDecision | null;
+    regimes: Record<string, Regime>;
   };
   valideLe?: string | null;
+  ancienReglageLignes?: number;
 };
 type Descripteur = { id: string; libelle: string; type: string; source: "formulaire" | "annotation"; position: string; blocId?: string; options?: string[] };
 type Role =
-  | "objet" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "programme" | "millesime" | "numeroEJ"
-  | "coutTotal" | "planBloc" | "planFinanceur" | "planMontant" | "planStatut" | "planAnnee" | "programmeSouhaite" | "motifRepartition";
-type LigneRole = "programme" | "financeurs" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "numeroEJ";
+  | "objet" | "montantDemande" | "millesime" | "coutTotal" | "planBloc" | "planFinanceur" | "planMontant" | "planStatut" | "planAnnee"
+  | "programmeSouhaite" | "motifRepartition"
+  | "decisionBloc" | "decisionRegime" | "decisionMontant" | "decisionStatut" | "decisionAssiette" | "decisionReference";
 type PlanRaisons = { bloc: string; financeur: string | null; montant: string | null; statut: string | null; annee: string | null; financeursPublics: string | null };
+type DecisionRaisons = {
+  bloc: string; regime: string | null; montant: string | null; statut: string | null; assiette: string | null; referenceEngagement: string | null;
+  statuts: string | null; regimes: Record<string, string>;
+};
 type Proposition = {
   demarche: { number: number; title: string; state: string; datePublication: string | null; nbChamps: number; nbAnnotations: number; dnAdminUrl: string };
   mutationsGlobal: boolean;
@@ -48,24 +50,13 @@ type Proposition = {
   proposition: Config;
   raisons: {
     objet: string; montantDemande: string; millesime: string; coutTotal: string; plan: PlanRaisons;
-    programmeSouhaite: string; motifRepartition: string; lignes: Record<LigneRole, string>[]; sansLigne: string | null;
+    programmeSouhaite: string; motifRepartition: string; decision: DecisionRaisons; sansBloc: string | null;
   };
   actuel: Config | null;
   introuvables: { role: string; libelle: string }[];
 };
 
 // État du formulaire : un champ est désigné par son identifiant ("" = aucun).
-type FormLigne = {
-  programmeSource: "aucun" | "fixe" | "champ";
-  programmeValeur: string;
-  programmeChamp: string;
-  montantDemande: string;
-  assiette: string;
-  montantAccorde: string;
-  taux: string;
-  numeroEJ: string;
-  financeurs: string[];
-};
 type Form = {
   libelle: string;
   delaiCibleJours: string;
@@ -83,8 +74,19 @@ type Form = {
   programmeSouhaite: string;
   tauxMaxAidesPubliques: string;
   motifRepartition: string;
-  lignes: FormLigne[];
+  decisionBloc: string;
+  decisionRegime: string;
+  decisionMontant: string;
+  decisionStatut: string;
+  decisionAssiette: string;
+  decisionReference: string;
+  // Option du statut → valeur générique ("" = aucune).
+  statuts: Record<string, StatutDecision | "">;
+  // Option du régime → financeurs et système d'engagement.
+  regimes: Record<string, { financeurs: string[]; systemeEngagement: string }>;
 };
+
+const STATUTS_LIBELLES: Record<StatutDecision, string> = { demande: "Demandé", propose: "Proposé", accorde: "Accordé" };
 
 const TYPES: Record<string, string> = {
   TextChampDescriptor: "texte court",
@@ -93,19 +95,14 @@ const TYPES: Record<string, string> = {
   DecimalNumberChampDescriptor: "nombre décimal",
   NumberChampDescriptor: "nombre",
   DropDownListChampDescriptor: "liste déroulante",
-  EngagementJuridiqueChampDescriptor: "engagement juridique",
   RepetitionChampDescriptor: "bloc répétable",
 };
 
 const id = (r: ChampRef | null | undefined) => r?.id ?? "";
 
-const emptyLigne = (): FormLigne => ({
-  programmeSource: "aucun", programmeValeur: "", programmeChamp: "",
-  montantDemande: "", assiette: "", montantAccorde: "", taux: "", numeroEJ: "", financeurs: [],
-});
-
 function toForm(c: Config): Form {
   const plan = c.finances.planFinancement;
+  const bd = c.finances.blocDecision;
   return {
     coutTotal: id(c.finances.coutTotal),
     planBloc: id(plan?.bloc),
@@ -123,17 +120,16 @@ function toForm(c: Config): Form {
     objet: id(c.champs.objet),
     montantDemande: id(c.champs.montantDemande),
     millesime: c.finances.millesime.source === "champ" ? c.finances.millesime.ref.id : "",
-    lignes: c.finances.lignes.map((l) => ({
-      programmeSource: l.programme ? l.programme.source : "aucun",
-      programmeValeur: l.programme?.source === "fixe" ? l.programme.valeur : "",
-      programmeChamp: l.programme?.source === "champ" ? l.programme.ref.id : "",
-      montantDemande: id(l.montantDemande),
-      assiette: id(l.assiette),
-      montantAccorde: l.montantAccorde.id,
-      taux: id(l.taux),
-      numeroEJ: id(l.numeroEJ),
-      financeurs: l.financeurs ?? [],
-    })),
+    decisionBloc: id(bd?.bloc),
+    decisionRegime: id(bd?.regime),
+    decisionMontant: id(bd?.montant),
+    decisionStatut: id(bd?.statut),
+    decisionAssiette: id(bd?.assiette),
+    decisionReference: id(bd?.referenceEngagement),
+    statuts: { ...(bd?.statuts ?? {}) },
+    regimes: Object.fromEntries(
+      Object.entries(c.finances.regimes ?? {}).map(([k, r]) => [k, { financeurs: r.financeurs, systemeEngagement: r.systemeEngagement ?? "" }]),
+    ),
   };
 }
 
@@ -161,19 +157,19 @@ function toBody(f: Form) {
       programmeSouhaite: ref(f.programmeSouhaite),
       tauxMaxAidesPubliques: f.tauxMaxAidesPubliques === "" ? null : Number(f.tauxMaxAidesPubliques),
       motifRepartition: ref(f.motifRepartition),
-      lignes: f.lignes.map((l) => ({
-        programme:
-          l.programmeSource === "fixe" ? { source: "fixe", valeur: l.programmeValeur }
-          : l.programmeSource === "champ" ? (l.programmeChamp ? { source: "champ", ref: { id: l.programmeChamp } } : null)
-          : null,
-        // Le plan de financement retiré, les financeurs des lignes n'ont plus de sens.
-        financeurs: f.planBloc ? l.financeurs : [],
-        montantDemande: ref(l.montantDemande),
-        assiette: ref(l.assiette),
-        montantAccorde: ref(l.montantAccorde),
-        taux: ref(l.taux),
-        numeroEJ: ref(l.numeroEJ),
-      })),
+      blocDecision: f.decisionBloc
+        ? {
+            bloc: { id: f.decisionBloc }, regime: ref(f.decisionRegime), montant: ref(f.decisionMontant), statut: ref(f.decisionStatut),
+            assiette: ref(f.decisionAssiette), referenceEngagement: ref(f.decisionReference),
+            statuts: Object.fromEntries(Object.entries(f.statuts).filter(([, v]) => v)),
+          }
+        : null,
+      // Le plan de financement retiré, les financeurs des régimes n'ont plus de sens.
+      regimes: f.decisionBloc
+        ? Object.fromEntries(
+            Object.entries(f.regimes).map(([k, r]) => [k, { financeurs: f.planBloc ? r.financeurs : [], systemeEngagement: r.systemeEngagement.trim() || null }]),
+          )
+        : {},
     },
   };
 }
@@ -188,10 +184,8 @@ function knownLabels(c: Config | null) {
   if (c.finances.millesime.source === "champ") add(c.finances.millesime.ref);
   const p = c.finances.planFinancement;
   [c.finances.coutTotal, c.finances.programmeSouhaite, c.finances.motifRepartition, p?.bloc, p?.financeur, p?.montant, p?.statut, p?.annee].forEach(add);
-  for (const l of c.finances.lignes) {
-    if (l.programme?.source === "champ") add(l.programme.ref);
-    [l.montantDemande, l.assiette, l.montantAccorde, l.taux, l.numeroEJ].forEach(add);
-  }
+  const b = c.finances.blocDecision;
+  [b?.bloc, b?.regime, b?.montant, b?.statut, b?.assiette, b?.referenceEngagement].forEach(add);
   return out;
 }
 
@@ -279,14 +273,6 @@ export function Parametres() {
   }
 
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
-  const setLigne = (i: number, patch: Partial<FormLigne>) =>
-    setForm((f) => (f ? { ...f, lignes: f.lignes.map((l, j) => (j === i ? { ...l, ...patch } : l)) } : f));
-
-  // Raisons des propositions de ligne, retrouvées par le montant accordé proposé.
-  const propLigne = (accorde: string) => {
-    const i = p?.proposition.finances.lignes.findIndex((l) => l.montantAccorde.id === accorde) ?? -1;
-    return i < 0 ? null : { ligne: p!.proposition.finances.lignes[i], raisons: p!.raisons.lignes[i] };
-  };
   const proposeRef = (r: ChampRef | null | undefined, raison: string | undefined) => (raison ? { id: id(r), raison } : undefined);
   const pm = p?.proposition.finances.millesime;
   const pf = p?.proposition.finances ?? ({} as Partial<Config["finances"]>);
@@ -297,6 +283,28 @@ export function Parametres() {
     const raison = p?.raisons.plan[k];
     return raison && pf.planFinancement?.bloc.id === form?.planBloc ? { id: id(pf.planFinancement?.[k]), raison } : undefined;
   };
+  // Bloc de décision : sous-champs du bloc choisi, options du statut et du régime.
+  const enfantsD = (role: Role) => (p && form ? p.candidats[role].filter((c) => c.blocId === form.decisionBloc) : []);
+  const optionsDe = (role: Role, champ: string) => (p && champ && p.candidats[role].find((c) => c.id === champ)?.options) || [];
+  const optionsStatut = form ? optionsDe("decisionStatut", form.decisionStatut) : [];
+  const optionsRegime = form ? optionsDe("decisionRegime", form.decisionRegime) : [];
+  const decisionPropose = (k: "regime" | "montant" | "statut" | "assiette" | "referenceEngagement") => {
+    const raison = p?.raisons.decision[k];
+    return raison && pf.blocDecision?.bloc.id === form?.decisionBloc ? { id: id(pf.blocDecision?.[k]), raison } : undefined;
+  };
+  // Proposition pour les valeurs d'une liste qui vient de changer (statut, régime).
+  const statutsProposes = (champ: string) =>
+    pf.blocDecision?.statut.id === champ ? { ...pf.blocDecision.statuts } : {};
+  const regimesProposes = (champ: string) =>
+    pf.blocDecision?.regime.id === champ
+      ? Object.fromEntries(Object.entries(pf.regimes ?? {}).map(([k, r]) => [k, { financeurs: r.financeurs, systemeEngagement: "" }]))
+      : {};
+  const setRegime = (option: string, patch: Partial<{ financeurs: string[]; systemeEngagement: string }>) =>
+    setForm((f) => {
+      if (!f) return f;
+      const actuel = f.regimes[option] ?? { financeurs: [], systemeEngagement: "" };
+      return { ...f, regimes: { ...f.regimes, [option]: { ...actuel, ...patch } } };
+    });
 
   return (
     <main className="page">
@@ -369,7 +377,10 @@ export function Parametres() {
             <fieldset className="ligne">
               <legend>Plan de financement</legend>
               <ChampSelect label="Bloc répétable du plan" value={form.planBloc}
-                onChange={(v) => set({ planBloc: v, planFinanceur: "", planMontant: "", planStatut: "", planAnnee: "", financeursPublics: [], lignes: form.lignes.map((l) => ({ ...l, financeurs: [] })) })}
+                onChange={(v) => set({
+                  planBloc: v, planFinanceur: "", planMontant: "", planStatut: "", planAnnee: "", financeursPublics: [],
+                  regimes: Object.fromEntries(Object.entries(form.regimes).map(([k, r]) => [k, { ...r, financeurs: [] }])),
+                })}
                 candidats={p.candidats.planBloc} aucun="Aucun plan de financement" known={known}
                 propose={proposeRef(pf.planFinancement?.bloc, p.raisons.plan.bloc)}
                 hint="Bloc du formulaire avec au moins une liste (financeur) et un nombre (montant)." />
@@ -384,7 +395,7 @@ export function Parametres() {
                     hint="Sert au taux « dont aides obtenues » (statut commençant par « obtenu »)." />
                   <ChampSelect label="Année (facultatif)" value={form.planAnnee} onChange={(v) => set({ planAnnee: v })}
                     candidats={enfants("planAnnee").filter((c) => c.id !== form.planFinanceur)} aucun="Aucune" known={known} propose={planPropose("annee")}
-                    hint="Prise en compte à l'étape C2, pour imputer chaque ligne du plan sur le millésime de son année." />
+                    hint="Prise en compte plus tard (C4), pour imputer chaque ligne du plan sur le millésime de son année." />
                   {optionsFinanceur.length > 0 && (
                     <fieldset className="field">
                       <legend className="field__label">Financeurs publics</legend>
@@ -406,7 +417,7 @@ export function Parametres() {
 
             <ChampSelect label="Programme souhaité" value={form.programmeSouhaite} onChange={(v) => set({ programmeSouhaite: v })} candidats={p.candidats.programmeSouhaite}
               aucun="Aucun" known={known} propose={proposeRef(pf.programmeSouhaite, p.raisons.programmeSouhaite)}
-              hint="Répartit le montant d'un financeur partagé par plusieurs lignes (ex. « État » pour DETR et DSIL)." />
+              hint="Liste du formulaire, une valeur par dossier. Départage les régimes d'un même financeur (ex. « État » pour DETR et DSIL) : ses options doivent correspondre à celles du régime d'aide." />
             <div className="field">
               <label htmlFor="tauxmax">Taux maximal des aides publiques (%)</label>
               <input id="tauxmax" className="input input--short" type="number" min={0} max={100} step="any" placeholder="facultatif"
@@ -417,85 +428,121 @@ export function Parametres() {
               aucun="Aucun" known={known} propose={proposeRef(pf.motifRepartition, p.raisons.motifRepartition)}
               hint="Annotation affichée dans l'onglet Demande de la fiche dossier, sous les lignes de financement." />
 
-            {p.raisons.sansLigne && (
+            {p.actuel?.ancienReglageLignes && (
               <p className="notice notice--warn">
-                {p.raisons.sansLigne}. Ajoutez-en une dans l'éditeur de la démarche sur DN (par exemple « Montant accordé »),
-                puis actualisez cette page. <a href={p.demarche.dnAdminUrl} target="_blank" rel="noreferrer">Ouvrir la démarche sur DN</a>
+                L'ancien réglage « lignes de financement » ({p.actuel.ancienReglageLignes} ligne{p.actuel.ancienReglageLignes > 1 ? "s" : ""}) n'est plus utilisé :
+                désignez le bloc de décision ci-dessous. Il disparaîtra du fichier au prochain enregistrement.
               </p>
             )}
 
-            {form.lignes.map((l, i) => {
-              const prop = propLigne(l.montantAccorde);
-              const r = prop?.raisons;
-              const plusieurs = form.lignes.length > 1;
-              return (
-                <fieldset key={i} className="ligne">
-                  <legend>Ligne de financement {i + 1}</legend>
-                  <ChampSelect label="Montant accordé" required value={l.montantAccorde} onChange={(v) => setLigne(i, { montantAccorde: v })} candidats={p.candidats.montantAccorde}
-                    aucun="À choisir" known={known} propose={r ? { id: prop!.ligne.montantAccorde.id, raison: r.montantAccorde } : undefined}
-                    hint="Annotation privée de type nombre : base du calcul de l'enveloppe." />
+            <fieldset className="ligne">
+              <legend>Bloc de décision</legend>
+              {p.raisons.sansBloc && (
+                <p className="notice notice--warn">
+                  {p.raisons.sansBloc}. Créez-en un dans l'éditeur de la démarche sur DN (régime d'aide, montant, statut), puis actualisez cette
+                  page. <a href={p.demarche.dnAdminUrl} target="_blank" rel="noreferrer">Ouvrir la démarche sur DN</a>
+                </p>
+              )}
+              <ChampSelect label="Bloc répétable d'annotations" value={form.decisionBloc}
+                onChange={(v) => set({
+                  decisionBloc: v, decisionRegime: "", decisionMontant: "", decisionStatut: "", decisionAssiette: "", decisionReference: "",
+                  statuts: {}, regimes: {},
+                })}
+                candidats={p.candidats.decisionBloc} aucun="Aucun bloc de décision" known={known}
+                propose={proposeRef(pf.blocDecision?.bloc, p.raisons.decision.bloc)}
+                hint="Annotations privées, une ligne par régime d'aide : c'est la seule source du montant accordé." />
+              {form.decisionBloc && (
+                <>
+                  <ChampSelect label="Régime d'aide" required value={form.decisionRegime}
+                    onChange={(v) => set({ decisionRegime: v, regimes: regimesProposes(v) })}
+                    candidats={enfantsD("decisionRegime").filter((c) => c.id !== form.decisionStatut)} aucun="À choisir" known={known}
+                    propose={decisionPropose("regime")} hint="Le programme de la ligne ; ses options sont la liste fermée des programmes d'enveloppe." />
+                  <ChampSelect label="Montant" required value={form.decisionMontant} onChange={(v) => set({ decisionMontant: v })}
+                    candidats={enfantsD("decisionMontant")} aucun="À choisir" known={known} propose={decisionPropose("montant")}
+                    hint="Montant accordé de la ligne, base du calcul de l'enveloppe." />
+                  <ChampSelect label="Statut" required value={form.decisionStatut}
+                    onChange={(v) => set({ decisionStatut: v, statuts: statutsProposes(v) })}
+                    candidats={enfantsD("decisionStatut").filter((c) => c.id !== form.decisionRegime)} aucun="À choisir" known={known}
+                    propose={decisionPropose("statut")} />
+                  <ChampSelect label="Assiette (facultatif)" value={form.decisionAssiette} onChange={(v) => set({ decisionAssiette: v })}
+                    candidats={enfantsD("decisionAssiette").filter((c) => c.id !== form.decisionMontant)} aucun="Aucune" known={known}
+                    propose={decisionPropose("assiette")} hint="Taux de la ligne = montant ÷ assiette." />
+                  <ChampSelect label="Référence d'engagement (facultatif)" value={form.decisionReference} onChange={(v) => set({ decisionReference: v })}
+                    candidats={enfantsD("decisionReference")} aucun="Aucune" known={known} propose={decisionPropose("referenceEngagement")}
+                    hint="Texte libre. La part de l'accepté qui porte une référence est comptée comme « engagée »." />
 
-                  <div className="field" role="radiogroup" aria-label={`Programme de la ligne ${i + 1}`}>
-                    <span className="field__label">Programme {plusieurs && <span className="muted">(obligatoire avec plusieurs lignes)</span>}</span>
-                    <div className="choices">
-                      {(["aucun", "fixe", "champ"] as const).map((src) => (
-                        <label key={src}>
-                          <input type="radio" name={`programme-${i}`} checked={l.programmeSource === src} onChange={() => setLigne(i, { programmeSource: src })} />
-                          {src === "aucun" ? "Aucun" : src === "fixe" ? "Valeur fixe" : "Lu dans un champ"}
-                        </label>
-                      ))}
-                    </div>
-                    {r && <p className="field__hint">{l.programmeSource === "aucun" && plusieurs ? "À renseigner : plusieurs lignes." : `Proposé : ${r.programme}.`}</p>}
-                  </div>
-                  {l.programmeSource === "fixe" && (
-                    <div className="field">
-                      <label htmlFor={`prog-${i}`}>Valeur du programme</label>
-                      <input id={`prog-${i}`} className="input" required maxLength={80} placeholder="ex. DSIL" value={l.programmeValeur} onChange={(e) => setLigne(i, { programmeValeur: e.target.value })} />
-                    </div>
-                  )}
-                  {l.programmeSource === "champ" && (
-                    <ChampSelect label="Champ du programme" required value={l.programmeChamp} onChange={(v) => setLigne(i, { programmeChamp: v })} candidats={p.candidats.programme} aucun="À choisir" known={known} />
-                  )}
-
-                  {form.planBloc && optionsFinanceur.length > 0 && (
+                  {optionsStatut.length > 0 && (
                     <fieldset className="field">
-                      <legend className="field__label">Financeurs de cette ligne</legend>
-                      <div className="choices">
-                        {optionsFinanceur.map((o) => (
-                          <label key={o}>
-                            <input type="checkbox" checked={l.financeurs.includes(o)}
-                              onChange={() => setLigne(i, { montantDemande: "", financeurs: l.financeurs.includes(o) ? l.financeurs.filter((x) => x !== o) : [...l.financeurs, o] })} />
-                            {o}
-                          </label>
-                        ))}
+                      <legend className="field__label">Valeurs de statut</legend>
+                      <div className="table-wrap">
+                        <table className="table">
+                          <thead><tr><th>Option dans DN</th><th>Valeur générique</th></tr></thead>
+                          <tbody>
+                            {optionsStatut.map((o) => (
+                              <tr key={o}>
+                                <td>{o}</td>
+                                <td>
+                                  <select className="input" aria-label={`Valeur générique de « ${o} »`} value={form.statuts[o] ?? ""}
+                                    onChange={(e) => set({ statuts: { ...form.statuts, [o]: e.target.value as StatutDecision | "" } })}>
+                                    <option value="">Aucune (anomalie si saisie)</option>
+                                    {(Object.keys(STATUTS_LIBELLES) as StatutDecision[]).map((v) => <option key={v} value={v}>{STATUTS_LIBELLES[v]}</option>)}
+                                  </select>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                      <p className="field__hint">
-                        Montant demandé = somme des lignes du plan de ces financeurs.
-                        {r && ` Proposé : ${r.financeurs}.`}
-                      </p>
+                      {p.raisons.decision.statuts && <p className="field__hint">Proposées : {p.raisons.decision.statuts}.</p>}
                     </fieldset>
                   )}
-                  {l.financeurs.length === 0 && (
-                    <ChampSelect label="Montant demandé" value={l.montantDemande} onChange={(v) => setLigne(i, { montantDemande: v })}
-                      candidats={p.candidats.montantDemande.filter((c) => c.id !== form.planMontant)}
-                      aucun={plusieurs ? "Aucun" : "Celui des cartes"} known={known} propose={r ? proposeRef(prop!.ligne.montantDemande, r.montantDemande) : undefined} />
-                  )}
-                  <ChampSelect label="Assiette éligible" value={l.assiette} onChange={(v) => setLigne(i, { assiette: v })} candidats={p.candidats.assiette}
-                    aucun="Aucune" known={known} propose={r ? proposeRef(prop!.ligne.assiette, r.assiette) : undefined} />
-                  <ChampSelect label="Taux" value={l.taux} onChange={(v) => setLigne(i, { taux: v })} candidats={p.candidats.taux}
-                    aucun="Calculé (accordé ÷ assiette)" known={known} propose={r ? proposeRef(prop!.ligne.taux, r.taux) : undefined} />
-                  <ChampSelect label="N° d'engagement juridique" value={l.numeroEJ} onChange={(v) => setLigne(i, { numeroEJ: v })} candidats={p.candidats.numeroEJ}
-                    aucun="Aucun" known={known} propose={r ? proposeRef(prop!.ligne.numeroEJ, r.numeroEJ) : undefined} />
 
-                  <button type="button" className="btn btn--danger-outline" onClick={() => set({ lignes: form.lignes.filter((_, j) => j !== i) })}>
-                    Retirer cette ligne
-                  </button>
-                </fieldset>
-              );
-            })}
-            <button type="button" className="btn btn--secondary" disabled={!p.candidats.montantAccorde.length} onClick={() => set({ lignes: [...form.lignes, emptyLigne()] })}>
-              Ajouter une ligne de financement
-            </button>
+                  {optionsRegime.length > 0 && (
+                    <fieldset className="field">
+                      <legend className="field__label">Table des régimes</legend>
+                      <p className="field__hint">
+                        Financeurs : le montant demandé du plan pour ces financeurs va à ce régime (au régime du programme souhaité s'il y en a plusieurs).
+                        Système d'engagement : texte libre (Chorus, Osiris, logiciel de la collectivité…), affiché seulement pour l'instant.
+                      </p>
+                      <div className="table-wrap">
+                        <table className="table">
+                          <thead><tr><th>Régime</th><th>Financeurs</th><th>Système d'engagement</th></tr></thead>
+                          <tbody>
+                            {optionsRegime.map((o) => {
+                              const r = form.regimes[o] ?? { financeurs: [], systemeEngagement: "" };
+                              const raison = p.raisons.decision.regimes[o];
+                              return (
+                                <tr key={o}>
+                                  <td>{o}</td>
+                                  <td>
+                                    {form.planBloc && optionsFinanceur.length > 0 ? (
+                                      <div className="choices">
+                                        {optionsFinanceur.map((fo) => (
+                                          <label key={fo}>
+                                            <input type="checkbox" checked={r.financeurs.includes(fo)}
+                                              onChange={() => setRegime(o, { financeurs: r.financeurs.includes(fo) ? r.financeurs.filter((x) => x !== fo) : [...r.financeurs, fo] })} />
+                                            {fo}
+                                          </label>
+                                        ))}
+                                      </div>
+                                    ) : <span className="muted">Aucun plan de financement</span>}
+                                    {raison && pf.blocDecision?.regime.id === form.decisionRegime && <p className="field__hint">Proposé : {raison}.</p>}
+                                  </td>
+                                  <td>
+                                    <input className="input" maxLength={80} aria-label={`Système d'engagement de « ${o} »`} placeholder="facultatif"
+                                      value={r.systemeEngagement} onChange={(e) => setRegime(o, { systemeEngagement: e.target.value })} />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </fieldset>
+                  )}
+                </>
+              )}
+            </fieldset>
 
             <h3>Enveloppes alimentées</h3>
             <p className="field__hint">

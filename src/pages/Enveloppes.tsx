@@ -36,7 +36,7 @@ export function Enveloppes() {
           <li key={e.id} className="settings__section">
             <Jauge e={e} />
             <p className="field__hint">
-              Alimentée par : {e.demarches.map((n) => data.demarches[n] ?? `n° ${n}`).join(", ")} · {e.indicateurs.dossiers} dossier{e.indicateurs.dossiers > 1 ? "s" : ""}
+              {e.programme ?? "Tous régimes"} · Alimentée par : {e.demarches.map((n) => data.demarches[n] ?? `n° ${n}`).join(", ")} · {e.indicateurs.dossiers} dossier{e.indicateurs.dossiers > 1 ? "s" : ""}
             </p>
           </li>
         ))}
