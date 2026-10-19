@@ -18,6 +18,7 @@ type Plan = { bloc: ChampRef; financeur: ChampRef; montant: ChampRef; statut: Ch
 type Config = {
   libelle: string;
   mutations: boolean;
+  annotations: boolean;
   delaiCibleJours: number;
   champs: { objet: ChampRef | null; montantDemande: ChampRef | null };
   finances: {
@@ -61,6 +62,7 @@ type Form = {
   libelle: string;
   delaiCibleJours: string;
   mutations: boolean;
+  annotations: boolean;
   objet: string;
   montantDemande: string;
   millesime: string;
@@ -117,6 +119,7 @@ function toForm(c: Config): Form {
     libelle: c.libelle,
     delaiCibleJours: String(c.delaiCibleJours),
     mutations: c.mutations,
+    annotations: c.annotations ?? false,
     objet: id(c.champs.objet),
     montantDemande: id(c.champs.montantDemande),
     millesime: c.finances.millesime.source === "champ" ? c.finances.millesime.ref.id : "",
@@ -144,6 +147,7 @@ function toBody(f: Form) {
     libelle: f.libelle,
     delaiCibleJours: Number(f.delaiCibleJours),
     mutations: f.mutations,
+    annotations: f.annotations,
     champs: { objet: ref(f.objet), montantDemande: ref(montantCartes(f)) },
     finances: {
       millesime: f.millesime ? { source: "champ", ref: { id: f.millesime } } : { source: "anneeDepot" },
@@ -555,13 +559,23 @@ export function Parametres() {
           </section>
 
           <section className="settings__section" aria-labelledby="s-mutations">
-            <h2 id="s-mutations">4. Changements d'état</h2>
+            <h2 id="s-mutations">4. Changements d'état et saisie</h2>
             <label className="check">
               <input type="checkbox" checked={form.mutations} onChange={(e) => set({ mutations: e.target.checked })} />
               Autoriser les changements d'état sur cette démarche
             </label>
+            <label className="check">
+              <input type="checkbox" checked={form.annotations} disabled={!form.decisionBloc && !form.annotations}
+                onChange={(e) => set({ annotations: e.target.checked })} aria-describedby="annotations-hint" />
+              Autoriser la saisie du bloc de décision depuis le back office
+            </label>
+            <p id="annotations-hint" className="field__hint">
+              Seuls les sous-champs du bloc de décision (régime, montant, statut, assiette, référence d'engagement) sont modifiables, et
+              une ligne peut être ajoutée. Chaque écriture est confirmée, avec ancienne et nouvelle valeur, et journalisée.
+              {!form.decisionBloc && " Désignez d'abord un bloc de décision."}
+            </p>
             <p className="field__hint">
-              Il faut aussi <code>DN_ENABLE_MUTATIONS=1</code> sur le serveur
+              Ces deux écritures demandent aussi <code>DN_ENABLE_MUTATIONS=1</code> sur le serveur
               {p.mutationsGlobal ? " (actif actuellement)." : " (inactif actuellement : aucun changement d'état n'est possible)."}
             </p>
           </section>

@@ -7,6 +7,7 @@ import { useApi } from "../api.ts";
 import { GeoMap } from "../GeoMap.tsx";
 import { MessageBody } from "../components/MessageBody.tsx";
 import { Financement } from "../components/Financement.tsx";
+import { DecisionEditor } from "../components/DecisionEditor.tsx";
 import { EVENTS, StateBadge, formatDate } from "../format.tsx";
 import { age, demarchePath, dossierPath, formatMontant, type Card, type Kanban } from "../board.ts";
 import { TRANSITIONS, type DossierState } from "../../shared/transitions.ts";
@@ -17,6 +18,8 @@ export type PanelContext = {
   askMove: (card: Card, target: DossierState) => void;
   // Incrémenté par le tableau après chaque changement d'état : la fiche se relit.
   version: number;
+  // Après une écriture dans DN (bloc de décision) : message, relecture du tableau et de la fiche.
+  onWritten: (message: string) => void;
 };
 
 // Types de champs sans valeur saisie : affichés comme structure, pas comme réponse.
@@ -161,7 +164,7 @@ function AvisItem({ a }: { a: any }) {
 export function DossierDetail() {
   const { number } = useParams();
   const navigate = useNavigate();
-  const { numero, kanban, askMove, version } = useOutletContext<PanelContext>();
+  const { numero, kanban, askMove, version, onWritten } = useOutletContext<PanelContext>();
   const demarche = useApi<any>(`/api/demarches/${numero}`);
   const dossier = useApi<any>(`/api/demarches/${numero}/dossiers/${number}?v=${version}`);
   const [tab, setTab] = useState<Tab>("demande");
@@ -309,6 +312,10 @@ export function DossierDetail() {
                     </dl>
                   </section>
                   {d.finance && <Financement f={d.finance} />}
+                  {d.decision?.saisie && (
+                    <DecisionEditor numero={numero} number={d.number} state={d.state} decision={d.decision} dnUrl={d.dnUrl}
+                      onSaved={onWritten} onReload={dossier.reload} />
+                  )}
                   <section>
                     <h2>Champs du formulaire</h2>
                     <Champs champs={champs} descriptors={rev.champDescriptors} />

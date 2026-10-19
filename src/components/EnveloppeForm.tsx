@@ -1,15 +1,7 @@
 // Création ou modification d'une enveloppe (docs/SPEC-multi-demarches.md § C). Montant saisi
 // en euros ; le serveur le valide et le stocke en centimes.
 import { useEffect, useState } from "react";
-
-// Montant saisi à la française : « 50 000 € », « 1.500.000 », « 12 500,50 ». null si illisible.
-export function parseEuros(saisie: string): number | null {
-  let s = saisie.replace(/[\s€]/g, "");
-  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(s)) s = s.replace(/\./g, "");
-  s = s.replace(",", ".");
-  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
-  return Number(s);
-}
+import { parseEuros } from "../finances.ts";
 
 type Initial = { libelle: string; programme: string | null; millesime: number; montantCentimes: number; demarches: number[]; parent: string | null };
 type Props = {

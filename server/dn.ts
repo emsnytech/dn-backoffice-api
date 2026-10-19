@@ -1,5 +1,6 @@
 // Client minimal de l'API GraphQL Démarche Numérique.
-// Le jeton est lu ici, côté serveur uniquement. Seule écriture : changeDossierState.
+// Le jeton est lu ici, côté serveur uniquement. Écritures : changeDossierState et, pour le
+// seul bloc de décision, modifierAnnotations (docs/SPEC-multi-demarches.md § C, C2b).
 import { MOTIVATION_ALLOWED, MOTIVATION_REQUIRED, TRANSITIONS, type DossierState } from "../shared/transitions.ts";
 
 const API_URL = process.env.DN_API_URL ?? "https://demarche.numerique.gouv.fr/api/v2/graphql";
@@ -236,6 +237,29 @@ export async function changeDossierState(
   const result = data[mutation];
   if (result.errors?.length) throw new TransitionError(result.errors.map((e: any) => e.message).join(" ; "));
   return { dossier: result.dossier, from: dossier.state as string };
+}
+
+// --- Écriture : annotations privées du bloc de décision (C2b) -----------------
+
+export class AnnotationError extends Error {}
+
+// Valeur d'une annotation : une clé par type (AnnotationValueInput), ou `repetition: n` pour
+// ajouter n lignes à un bloc répétable. `id` est l'identifiant du champ dans le dossier.
+export type AnnotationWrite = { id: string; value: Record<string, unknown> };
+
+export async function modifierAnnotations(numero: number, dossierId: string, annotations: AnnotationWrite[]) {
+  const query = `
+    mutation annot($input: DossierModifierAnnotationsInput!) {
+      dossierModifierAnnotations(input: $input) {
+        annotations { id }
+        errors { message }
+      }
+    }`;
+  const input = { dossierId, instructeurId: await getInstructeurId(numero), annotations };
+  const data: any = await gql(query, { input });
+  const result = data.dossierModifierAnnotations;
+  if (result.errors?.length) throw new AnnotationError(result.errors.map((e: any) => e.message).join(" ; "));
+  return result.annotations as { id: string }[];
 }
 
 // Renvoie null si le dossier n'appartient pas à la démarche indiquée.

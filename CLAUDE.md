@@ -46,8 +46,12 @@ Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
   assiette, référence d'engagement), table des régimes (financeurs, système d'engagement),
   arbitrage état DN / statut de ligne (désaccord = anomalie), repère « décidé, à notifier »,
   programme d'enveloppe choisi parmi les régimes. Lecture seule.
-- **C2b** (saisie de la décision par `dossierModifierAnnotations`), **C3, D** : à faire, chacune
-  après validation de la précédente.
+- **C2b (en test)** : saisie du bloc de décision depuis l'onglet Demande (`dossierModifierAnnotations`),
+  réglage `annotations` par démarche (faux par défaut) en plus de `DN_ENABLE_MUTATIONS`, seuls les
+  sous-champs du bloc désignés, relecture avant écriture (409 si une valeur a changé dans DN),
+  confirmation ancienne → nouvelle valeur, ajout d'une ligne en deux temps, journal
+  `logs/annotations.log`. Activé sur la 154701 uniquement.
+- **C3, D** : à faire, chacune après validation de la précédente.
 
 ## Stack
 
@@ -115,11 +119,13 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
 - Un hook `pre-commit` (`.githooks/`, activé par `npm install`) bloque tout commit
   contenant un `.env`, un fichier de `data/` ou la valeur du jeton. Ne jamais le
   contourner (`--no-verify`).
-- **Aucune mutation avant l'étape 3** (docs/SPEC-kanban.md). La seule mutation prévue
-  est le changement d'état (`changeDossierState` dans `server/dn.ts`). Elle est
-  désactivée sans `DN_ENABLE_MUTATIONS=1`. Les transitions permises sont dans
-  `shared/transitions.ts`, et le serveur les vérifie à partir de l'état réel du dossier.
-  Toute autre mutation (annotation, message…) demande l'accord explicite de l'utilisateur.
+- **Aucune mutation avant l'étape 3** (docs/SPEC-kanban.md). Deux mutations seulement, toutes
+  deux désactivées sans `DN_ENABLE_MUTATIONS=1` : le changement d'état (`changeDossierState`
+  dans `server/dn.ts`, transitions de `shared/transitions.ts` vérifiées à partir de l'état réel
+  du dossier) et, accordée par l'utilisateur le 19/10/2026, l'écriture des seuls sous-champs du
+  bloc de décision (`modifierAnnotations`, `server/decision.ts`, réglage `annotations` de la
+  démarche). Toute autre mutation (autre annotation, message…) demande l'accord explicite de
+  l'utilisateur.
 - Les réponses brutes de l'API vont dans `data/` (ignoré par git). Ce sont des
   données personnelles d'usagers : ne pas les publier.
 - Pagination des dossiers : `first` / `after` avec `pageInfo { hasNextPage endCursor }`.
@@ -136,6 +142,7 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   - `GET /api/demarches/:numero/proposition` (candidats par rôle, paramétrage proposé et
     ses raisons, fiche actuelle, champs disparus de la révision) ;
   - `POST /api/demarches/:numero/dossiers/:n/state` (désactivée par défaut) ;
+  - `POST /api/demarches/:numero/dossiers/:n/decision` (bloc de décision ; désactivée par défaut) ;
   - `GET /api/dossiers/:n/demarche`, pour rediriger les anciennes adresses `/dossiers/:n` ;
   - `GET /api/enveloppes` (avec indicateurs), `POST` ; `GET`, `PUT`, `DELETE /api/enveloppes/:id` ;
     `GET /api/enveloppes/programmes?demarches=…` (liste fermée des régimes d'aide) ;
@@ -147,6 +154,8 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
 - `server/finances.ts` : données financières d'un dossier (millésime, plan de financement,
   lignes par régime lues dans le bloc de décision, statut financier, taux d'aide publique,
   anomalies), en centimes.
+- `server/decision.ts` : vue du bloc de décision d'un dossier (identifiants des champs) et
+  saisie (validation, relecture avant écriture, ajout d'une ligne en deux temps).
 - `server/enveloppes.ts` : lecture, validation et écriture de `config/enveloppes/`,
   imputation des dossiers et indicateurs par enveloppe.
 - `server/kanban.ts` : requête et mise en forme des cartes du kanban, résumé de l'accueil.
@@ -162,7 +171,9 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   (`npm run fetch -- <numéro>`, ou toutes les démarches déclarées sans numéro).
 - `logs/mutations.log` (ignoré par git) : une ligne JSON par tentative de changement
   d'état (date, démarche, dossier, départ, arrivée, notification, résultat). Ni le jeton, ni le
-  texte de la motivation.
+  texte de la motivation. `logs/annotations.log` (ignoré par git) : une ligne JSON par saisie
+  du bloc de décision (démarche, dossier, état, sous-champ, ancienne et nouvelle valeur,
+  ajout de ligne, résultat).
 
 ## Points d'attention sur l'API
 
@@ -193,6 +204,10 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   C'est le cas du montant demandé de la démarche 154701.
 - DN a un type `EngagementJuridiqueChampDescriptor` : il n'est pas utilisé. La référence
   d'engagement est un sous-champ texte libre du bloc de décision.
+- `dossierModifierAnnotations` : `id` = identifiant du champ dans le dossier (celui d'une ligne
+  pour un sous-champ de bloc) ; `repetition: 1` ajoute une ligne vide (vérifié le 19/10/2026 sur
+  le dossier de test de la 154701) ; un texte se vide avec "". Aucune clé ne supprime une ligne.
+  Le type `Int` limite un nombre entier à 2 147 483 647.
 - Les libellés (régime, programme souhaité, financeur, statut) se comparent avec `memeLibelle`
   (`server/parametrage.ts`) : casse, accents, espaces et apostrophes ‘ ’ normalisés.
 - Une liste déroulante n'est proposée comme millésime que si toutes ses options sont des années.

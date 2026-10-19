@@ -5,6 +5,7 @@ import { Hono, type Context, type Next } from "hono";
 import { serve } from "@hono/node-server";
 import { appendFile, mkdir } from "node:fs/promises";
 import {
+  AnnotationError,
   DN_WEB_ORIGIN,
   MUTATIONS_ENABLED,
   TransitionError,
@@ -16,6 +17,7 @@ import {
 } from "./dn.ts";
 import { demandeur, fetchDemarcheDossiers, fetchKanban, fetchSummary } from "./kanban.ts";
 import { computeDossier } from "./finances.ts";
+import { DecisionError, appliquerDecision, vueDecision } from "./decision.ts";
 import {
   computeEnveloppes,
   deleteEnveloppe,
@@ -161,12 +163,16 @@ app.get("/demarches/:numero{[0-9]+}/dossiers/:number{[0-9]+}", declared, async (
   const { numero } = c.get("config");
   const dossier = await fetchDossier(numero, Number(c.req.param("number")));
   if (!dossier) return c.json({ error: "Dossier introuvable dans cette démarche" }, 404);
-  const f = c.get("config").finances;
+  const config = c.get("config");
+  const f = config.finances;
+  // Bloc de décision modifiable (C2b) : identifiants des champs, options et types des sous-champs.
+  const decision = f.blocDecision ? vueDecision(dossier, config, (await fetchDemarche(numero)).activeRevision) : null;
   return c.json({
     ...dossier,
     demandeurLabel: demandeur(dossier.demandeur).label,
     // Données financières (§ C) : plan de financement, bloc de décision, taux d'aide publique, anomalies.
-    finance: f.blocDecision || f.planFinancement || f.coutTotal ? computeDossier(dossier, c.get("config")) : null,
+    finance: f.blocDecision || f.planFinancement || f.coutTotal ? computeDossier(dossier, config) : null,
+    decision: decision && { ...decision, saisie: MUTATIONS_ENABLED && config.annotations },
     // Page instructeur du dossier dans DN (le numéro de démarche est l'identifiant de procédure).
     dnUrl: `${DN_WEB_ORIGIN}/procedures/${numero}/dossiers/${dossier.number}`,
   });
@@ -319,6 +325,44 @@ app.post("/demarches/:numero{[0-9]+}/dossiers/:number{[0-9]+}/state", declared, 
   } catch (e) {
     await logMutation({ ...base, resultat: "erreur", message: (e as Error).message });
     if (e instanceof TransitionError) return c.json({ error: e.message }, 422);
+    throw e;
+  }
+});
+
+// Saisie du bloc de décision (C2b) : journal local, une ligne JSON par tentative (sous-champ,
+// ancienne et nouvelle valeur, résultat). Ni le jeton, ni aucune autre donnée du dossier.
+async function logAnnotations(entry: Record<string, unknown>) {
+  await mkdir(LOG_DIR, { recursive: true });
+  await appendFile(new URL("annotations.log", LOG_DIR), JSON.stringify({ date: new Date().toISOString(), ...entry }) + "\n");
+}
+
+// Seule écriture d'annotations : le bloc de décision, si l'interrupteur général et le réglage
+// `annotations` de la démarche l'autorisent tous les deux.
+app.post("/demarches/:numero{[0-9]+}/dossiers/:number{[0-9]+}/decision", declared, async (c) => {
+  const config = c.get("config");
+  if (!MUTATIONS_ENABLED) return c.json({ error: "Écritures désactivées sur ce serveur (DN_ENABLE_MUTATIONS)" }, 403);
+  if (!config.annotations) return c.json({ error: "Saisie du bloc de décision non autorisée pour cette démarche (voir ses paramètres)" }, 403);
+  const notJson = requireJson(c);
+  if (notJson) return notJson;
+  const number = Number(c.req.param("number"));
+  const body = await c.req.json();
+  const base = { demarche: config.numero, dossier: number };
+  try {
+    const revision = (await fetchDemarche(config.numero)).activeRevision;
+    const r = await appliquerDecision(config, number, body, revision);
+    await logAnnotations({
+      ...base, etat: r.etat, resultat: "ok",
+      modifications: r.modifications.map(({ rang, role, avant, apres }) => ({ ligne: rang, role, descripteur: config.finances.blocDecision![role]?.id, avant, apres })),
+      nouvelleLigne: r.nouvelleLigne,
+    });
+    console.log(`Démarche ${config.numero}, dossier ${number} : bloc de décision modifié (${r.modifications.length} valeur(s)${r.nouvelleLigne ? ", une ligne ajoutée" : ""})`);
+    return c.json(r);
+  } catch (e) {
+    // Valeurs demandées journalisées telles qu'envoyées (montants, options, références).
+    const demande = (Array.isArray(body?.modifications) ? body.modifications : []).map((m: any) => ({ role: m?.role, avant: m?.avant ?? null, apres: m?.apres ?? null }));
+    await logAnnotations({ ...base, resultat: "erreur", message: (e as Error).message, modifications: demande, nouvelleLigne: body?.nouvelleLigne ?? null });
+    if (e instanceof DecisionError) return c.json({ error: e.message, details: e.details }, e.status);
+    if (e instanceof AnnotationError) return c.json({ error: `Démarche Numérique a refusé la modification : ${e.message}` }, 422);
     throw e;
   }
 });

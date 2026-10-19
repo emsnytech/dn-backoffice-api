@@ -80,7 +80,28 @@ export type DossierFinance = {
   anomalies: Anomalie[];
 };
 
+// Bloc de décision modifiable (C2b), tel que le serveur le relit dans DN : identifiant de chaque
+// champ, valeurs (montants en euros), libellés, types et options des sous-champs.
+export type RoleDecision = "regime" | "montant" | "statut" | "assiette" | "referenceEngagement";
+export const ROLES_DECISION: RoleDecision[] = ["regime", "statut", "montant", "assiette", "referenceEngagement"];
+export type ValeurDecision = string | number | null;
+export type VueDecision = {
+  saisie: boolean;
+  blocChampId: string | null;
+  lignes: { rang: number; rowId: string; champs: Partial<Record<RoleDecision, { champId: string; valeur: ValeurDecision }>> }[];
+  sousChamps: Partial<Record<RoleDecision, { descripteur: string; libelle: string; genre: "liste" | "entier" | "decimal" | "texte" | "texteLong"; options?: string[] }>>;
+};
+
 const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 2, minimumFractionDigits: 0 });
 export const formatCentimes = (c: number | null | undefined) => (c === null || c === undefined ? "—" : eur.format(c / 100));
 export const formatPct = (p: number | null | undefined) => (p === null || p === undefined ? "—" : `${p.toLocaleString("fr-FR")} %`);
 export const enveloppePath = (id: string) => `/enveloppes/${id}`;
+
+// Montant saisi à la française : « 50 000 € », « 1.500.000 », « 12 500,50 ». null si illisible.
+export function parseEuros(saisie: string): number | null {
+  let s = saisie.replace(/[\s€]/g, "");
+  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(s)) s = s.replace(/\./g, "");
+  s = s.replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  return Number(s);
+}

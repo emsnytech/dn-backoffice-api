@@ -55,6 +55,8 @@ export type DemarcheConfig = {
   libelle: string;
   // Changements d'état autorisés sur cette démarche (en plus de DN_ENABLE_MUTATIONS).
   mutations: boolean;
+  // Saisie du bloc de décision depuis le back office (C2b), en plus de DN_ENABLE_MUTATIONS.
+  annotations: boolean;
   delaiCibleJours: number;
   champs: { objet: ChampRef | null; montantDemande: ChampRef | null };
   finances: Finances;
@@ -77,7 +79,7 @@ export async function getConfig(numero: number): Promise<DemarcheConfig | null> 
     // `lignes` est abandonné sans migration, la fiche de paramétrage le signale.
     const { lignes, ...rest } = config.finances ?? {};
     const finances = { ...defaultFinances(), ...rest };
-    const out: DemarcheConfig = { ...config, finances };
+    const out: DemarcheConfig = { annotations: false, ...config, finances };
     if (Array.isArray(lignes) && lignes.length) out.ancienReglageLignes = lignes.length;
     return out;
   } catch (e: any) {
@@ -108,6 +110,7 @@ export const defaultConfig = (numero: number, libelle: string): DemarcheConfig =
   numero,
   libelle,
   mutations: false,
+  annotations: false,
   delaiCibleJours: 45,
   champs: { objet: null, montantDemande: null },
   finances: defaultFinances(),
@@ -261,7 +264,10 @@ export function parseConfig(numero: number, body: any, revision: any): DemarcheC
   const delai = Number(body.delaiCibleJours);
   if (!Number.isInteger(delai) || delai < 1 || delai > 3650) throw new ConfigError("Délai cible invalide (1 à 3650 jours)");
   if (typeof body.mutations !== "boolean") throw new ConfigError("Réglage « changements d'état » invalide");
+  const annotations = body.annotations ?? false;
+  if (typeof annotations !== "boolean") throw new ConfigError("Réglage « saisie du bloc de décision » invalide");
   const finances = parseFinances(body.finances, revision);
+  if (annotations && !finances.blocDecision) throw new ConfigError("La saisie du bloc de décision suppose un bloc de décision désigné");
   const montantDemande = champRef(body.champs?.montantDemande, "montantDemande", revision);
   // Le sous-champ montant du plan additionnerait tous les financeurs (§ B).
   if (montantDemande && montantDemande.id === finances.planFinancement?.montant.id) {
@@ -271,6 +277,7 @@ export function parseConfig(numero: number, body: any, revision: any): DemarcheC
     numero,
     libelle,
     mutations: body.mutations,
+    annotations,
     delaiCibleJours: delai,
     champs: {
       objet: champRef(body.champs?.objet, "objet", revision),

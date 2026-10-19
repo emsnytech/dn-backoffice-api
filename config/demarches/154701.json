@@ -2,6 +2,7 @@
   "numero": 154701,
   "libelle": "Subventions (modèle back kanban)",
   "mutations": true,
+  "annotations": true,
   "delaiCibleJours": 45,
   "champs": {
     "objet": {
@@ -31,10 +32,7 @@
         "id": "Q2hhbXAtMjQxOTcwOQ==",
         "libelle": "demander une subvention de › Montant (€)"
       },
-      "statut": {
-        "id": "Q2hhbXAtNzA5MzAzNw==",
-        "libelle": "demander une subvention de › Choix simple"
-      },
+      "statut": null,
       "annee": {
         "id": "Q2hhbXAtMjQxOTcxMA==",
         "libelle": "demander une subvention de › Au titre de l'année ou exercice"
@@ -43,13 +41,54 @@
         "Etat"
       ]
     },
-    "programmeSouhaite": null,
+    "programmeSouhaite": {
+      "id": "Q2hhbXAtNzA5NDE0OQ==",
+      "libelle": "Programme souhaité"
+    },
     "tauxMaxAidesPubliques": 80,
     "motifRepartition": {
       "id": "Q2hhbXAtMjYxMDQ0NA==",
       "libelle": "Commentaires libres"
     },
-    "lignes": []
+    "blocDecision": {
+      "bloc": {
+        "id": "Q2hhbXAtNzA5Mjk0Nw==",
+        "libelle": "financement"
+      },
+      "regime": {
+        "id": "Q2hhbXAtNzA5MzA0Mw==",
+        "libelle": "financement › Programme d'aide"
+      },
+      "montant": {
+        "id": "Q2hhbXAtNzA5Mjk1MQ==",
+        "libelle": "financement › Montant de l'aide"
+      },
+      "statut": {
+        "id": "Q2hhbXAtNzA5Mjk0OQ==",
+        "libelle": "financement › Statut de la demande"
+      },
+      "assiette": {
+        "id": "Q2hhbXAtNzA5NDE2MQ==",
+        "libelle": "financement › Assiette"
+      },
+      "referenceEngagement": {
+        "id": "Q2hhbXAtNzA5NDE2Mw==",
+        "libelle": "financement › Référence d'engagement"
+      },
+      "statuts": {
+        "demandé": "demande",
+        "proposé": "propose",
+        "accordé": "accorde"
+      }
+    },
+    "regimes": {
+      "Aide d'urgence": {
+        "financeurs": [
+          "Etat"
+        ],
+        "systemeEngagement": null
+      }
+    }
   },
-  "valideLe": "2026-10-19T12:44:06.113Z"
+  "valideLe": "2026-10-19T13:29:02.756Z"
 }

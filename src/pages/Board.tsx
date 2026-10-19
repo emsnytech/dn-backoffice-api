@@ -103,6 +103,13 @@ export function Board({ numero }: { numero: string }) {
     setVersion((v) => v + 1);
   }
 
+  // Écriture dans DN depuis la fiche (bloc de décision) : pas de mise à jour optimiste non plus.
+  function onWritten(message: string) {
+    setToast(message);
+    sync();
+    setVersion((v) => v + 1);
+  }
+
   // Attributs d'une zone de dépôt pour l'état cible donné.
   function dropZone(target: DossierState) {
     if (!canMove) return {};
@@ -328,7 +335,7 @@ export function Board({ numero }: { numero: string }) {
         </>
       )}
 
-      <Outlet context={{ numero, kanban: k, askMove, version } satisfies PanelContext} />
+      <Outlet context={{ numero, kanban: k, askMove, version, onWritten } satisfies PanelContext} />
       <TransitionDialog pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMove}
         impact={pending?.target === "accepte" ? acceptImpact(pending.card) : null} />
     </>

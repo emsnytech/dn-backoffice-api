@@ -253,6 +253,7 @@ export function proposition(demarche: any) {
     proposition: {
       libelle: libelleCourt(demarche.title),
       mutations: false,
+      annotations: false,
       delaiCibleJours: 45,
       champs: { objet: objet.ref, montantDemande: montantDemande.ref },
       finances: {
