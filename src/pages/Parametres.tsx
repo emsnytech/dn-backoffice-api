@@ -11,30 +11,45 @@ type ChampRef = { id: string; libelle: string };
 type Programme = { source: "fixe"; valeur: string } | { source: "champ"; ref: ChampRef } | null;
 type Ligne = {
   programme: Programme;
+  financeurs: string[];
   montantDemande: ChampRef | null;
   assiette: ChampRef | null;
   montantAccorde: ChampRef;
   taux: ChampRef | null;
-  tauxMax: number | null;
   numeroEJ: ChampRef | null;
 };
+type Plan = { bloc: ChampRef; financeur: ChampRef; montant: ChampRef; statut: ChampRef | null; annee: ChampRef | null; financeursPublics: string[] };
 type Config = {
   libelle: string;
   mutations: boolean;
   delaiCibleJours: number;
   champs: { objet: ChampRef | null; montantDemande: ChampRef | null };
-  finances: { millesime: { source: "anneeDepot" } | { source: "champ"; ref: ChampRef }; lignes: Ligne[] };
+  finances: {
+    millesime: { source: "anneeDepot" } | { source: "champ"; ref: ChampRef };
+    coutTotal: ChampRef | null;
+    planFinancement: Plan | null;
+    programmeSouhaite: ChampRef | null;
+    tauxMaxAidesPubliques: number | null;
+    motifRepartition: ChampRef | null;
+    lignes: Ligne[];
+  };
   valideLe?: string | null;
 };
-type Descripteur = { id: string; libelle: string; type: string; source: "formulaire" | "annotation"; position: string };
-type Role = "objet" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "programme" | "millesime" | "numeroEJ";
-type LigneRole = "programme" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "numeroEJ";
+type Descripteur = { id: string; libelle: string; type: string; source: "formulaire" | "annotation"; position: string; blocId?: string; options?: string[] };
+type Role =
+  | "objet" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "programme" | "millesime" | "numeroEJ"
+  | "coutTotal" | "planBloc" | "planFinanceur" | "planMontant" | "planStatut" | "planAnnee" | "programmeSouhaite" | "motifRepartition";
+type LigneRole = "programme" | "financeurs" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "numeroEJ";
+type PlanRaisons = { bloc: string; financeur: string | null; montant: string | null; statut: string | null; annee: string | null; financeursPublics: string | null };
 type Proposition = {
   demarche: { number: number; title: string; state: string; datePublication: string | null; nbChamps: number; nbAnnotations: number; dnAdminUrl: string };
   mutationsGlobal: boolean;
   candidats: Record<Role, Descripteur[]>;
   proposition: Config;
-  raisons: { objet: string; montantDemande: string; millesime: string; lignes: Record<LigneRole, string>[]; sansLigne: string | null };
+  raisons: {
+    objet: string; montantDemande: string; millesime: string; coutTotal: string; plan: PlanRaisons;
+    programmeSouhaite: string; motifRepartition: string; lignes: Record<LigneRole, string>[]; sansLigne: string | null;
+  };
   actuel: Config | null;
   introuvables: { role: string; libelle: string }[];
 };
@@ -48,8 +63,8 @@ type FormLigne = {
   assiette: string;
   montantAccorde: string;
   taux: string;
-  tauxMax: string;
   numeroEJ: string;
+  financeurs: string[];
 };
 type Form = {
   libelle: string;
@@ -58,6 +73,16 @@ type Form = {
   objet: string;
   montantDemande: string;
   millesime: string;
+  coutTotal: string;
+  planBloc: string;
+  planFinanceur: string;
+  planMontant: string;
+  planStatut: string;
+  planAnnee: string;
+  financeursPublics: string[];
+  programmeSouhaite: string;
+  tauxMaxAidesPubliques: string;
+  motifRepartition: string;
   lignes: FormLigne[];
 };
 
@@ -69,17 +94,29 @@ const TYPES: Record<string, string> = {
   NumberChampDescriptor: "nombre",
   DropDownListChampDescriptor: "liste déroulante",
   EngagementJuridiqueChampDescriptor: "engagement juridique",
+  RepetitionChampDescriptor: "bloc répétable",
 };
 
 const id = (r: ChampRef | null | undefined) => r?.id ?? "";
 
 const emptyLigne = (): FormLigne => ({
   programmeSource: "aucun", programmeValeur: "", programmeChamp: "",
-  montantDemande: "", assiette: "", montantAccorde: "", taux: "", tauxMax: "", numeroEJ: "",
+  montantDemande: "", assiette: "", montantAccorde: "", taux: "", numeroEJ: "", financeurs: [],
 });
 
 function toForm(c: Config): Form {
+  const plan = c.finances.planFinancement;
   return {
+    coutTotal: id(c.finances.coutTotal),
+    planBloc: id(plan?.bloc),
+    planFinanceur: id(plan?.financeur),
+    planMontant: id(plan?.montant),
+    planStatut: id(plan?.statut),
+    planAnnee: id(plan?.annee),
+    financeursPublics: plan?.financeursPublics ?? [],
+    programmeSouhaite: id(c.finances.programmeSouhaite),
+    tauxMaxAidesPubliques: c.finances.tauxMaxAidesPubliques === null ? "" : String(c.finances.tauxMaxAidesPubliques),
+    motifRepartition: id(c.finances.motifRepartition),
     libelle: c.libelle,
     delaiCibleJours: String(c.delaiCibleJours),
     mutations: c.mutations,
@@ -94,8 +131,8 @@ function toForm(c: Config): Form {
       assiette: id(l.assiette),
       montantAccorde: l.montantAccorde.id,
       taux: id(l.taux),
-      tauxMax: l.tauxMax === null ? "" : String(l.tauxMax),
       numeroEJ: id(l.numeroEJ),
+      financeurs: l.financeurs ?? [],
     })),
   };
 }
@@ -110,16 +147,27 @@ function toBody(f: Form) {
     champs: { objet: ref(f.objet), montantDemande: ref(f.montantDemande) },
     finances: {
       millesime: f.millesime ? { source: "champ", ref: { id: f.millesime } } : { source: "anneeDepot" },
+      coutTotal: ref(f.coutTotal),
+      planFinancement: f.planBloc
+        ? {
+            bloc: { id: f.planBloc }, financeur: ref(f.planFinanceur), montant: ref(f.planMontant),
+            statut: ref(f.planStatut), annee: ref(f.planAnnee), financeursPublics: f.financeursPublics,
+          }
+        : null,
+      programmeSouhaite: ref(f.programmeSouhaite),
+      tauxMaxAidesPubliques: f.tauxMaxAidesPubliques === "" ? null : Number(f.tauxMaxAidesPubliques),
+      motifRepartition: ref(f.motifRepartition),
       lignes: f.lignes.map((l) => ({
         programme:
           l.programmeSource === "fixe" ? { source: "fixe", valeur: l.programmeValeur }
           : l.programmeSource === "champ" ? (l.programmeChamp ? { source: "champ", ref: { id: l.programmeChamp } } : null)
           : null,
+        // Le plan de financement retiré, les financeurs des lignes n'ont plus de sens.
+        financeurs: f.planBloc ? l.financeurs : [],
         montantDemande: ref(l.montantDemande),
         assiette: ref(l.assiette),
         montantAccorde: ref(l.montantAccorde),
         taux: ref(l.taux),
-        tauxMax: l.tauxMax === "" ? null : Number(l.tauxMax),
         numeroEJ: ref(l.numeroEJ),
       })),
     },
@@ -134,6 +182,8 @@ function knownLabels(c: Config | null) {
   add(c.champs.objet);
   add(c.champs.montantDemande);
   if (c.finances.millesime.source === "champ") add(c.finances.millesime.ref);
+  const p = c.finances.planFinancement;
+  [c.finances.coutTotal, c.finances.programmeSouhaite, c.finances.motifRepartition, p?.bloc, p?.financeur, p?.montant, p?.statut, p?.annee].forEach(add);
   for (const l of c.finances.lignes) {
     if (l.programme?.source === "champ") add(l.programme.ref);
     [l.montantDemande, l.assiette, l.montantAccorde, l.taux, l.numeroEJ].forEach(add);
@@ -235,6 +285,14 @@ export function Parametres() {
   };
   const proposeRef = (r: ChampRef | null | undefined, raison: string | undefined) => (raison ? { id: id(r), raison } : undefined);
   const pm = p?.proposition.finances.millesime;
+  const pf = p?.proposition.finances ?? ({} as Partial<Config["finances"]>);
+  // Sous-champs du bloc choisi pour le plan, et options de son sous-champ financeur.
+  const enfants = (role: Role) => (p && form ? p.candidats[role].filter((c) => c.blocId === form.planBloc) : []);
+  const optionsFinanceur = (p && form && p.candidats.planFinanceur.find((c) => c.id === form.planFinanceur)?.options) || [];
+  const planPropose = (k: "financeur" | "montant" | "statut" | "annee") => {
+    const raison = p?.raisons.plan[k];
+    return raison && pf.planFinancement?.bloc.id === form?.planBloc ? { id: id(pf.planFinancement?.[k]), raison } : undefined;
+  };
 
   return (
     <main className="page">
@@ -278,9 +336,12 @@ export function Parametres() {
             <h2 id="s-cartes">2. Affichage des cartes</h2>
             <ChampSelect label="Objet" value={form.objet} onChange={(v) => set({ objet: v })} candidats={p.candidats.objet} aucun="Aucun" known={known}
               propose={proposeRef(p.proposition.champs.objet, p.raisons.objet)} />
-            <ChampSelect label="Montant demandé" value={form.montantDemande} onChange={(v) => set({ montantDemande: v })} candidats={p.candidats.montantDemande} aucun="Aucun" known={known}
+            <ChampSelect label="Montant demandé" value={form.montantDemande} onChange={(v) => set({ montantDemande: v })}
+              candidats={p.candidats.montantDemande.filter((c) => c.id !== form.planMontant)} aucun={form.planBloc ? "Calculé à partir du plan de financement" : "Aucun"} known={known}
               propose={proposeRef(p.proposition.champs.montantDemande, p.raisons.montantDemande)}
-              hint="Un champ d'un bloc répétable vaut la somme de ses lignes." />
+              hint={form.planBloc
+                ? "Avec un plan de financement, laissez « calculé » : la carte affiche la somme du plan pour les financeurs des lignes."
+                : "Un champ d'un bloc répétable vaut la somme de ses lignes."} />
             <div className="field">
               <label htmlFor="delai">Délai cible (jours)</label>
               <input id="delai" className="input input--short" type="number" min={1} max={3650} required value={form.delaiCibleJours} onChange={(e) => set({ delaiCibleJours: e.target.value })} />
@@ -297,6 +358,60 @@ export function Parametres() {
                 ? "Source du millésime : le champ désigné ci-dessus."
                 : "Source du millésime : année de dépôt du dossier, aucun champ désigné. Chaque enveloppe comptera les dossiers dont le millésime est ainsi déduit."}
             </p>
+
+            <ChampSelect label="Coût total" value={form.coutTotal} onChange={(v) => set({ coutTotal: v })} candidats={p.candidats.coutTotal} aucun="Aucun" known={known}
+              propose={proposeRef(pf.coutTotal, p.raisons.coutTotal)} hint="Base de la part du coût total et des taux d'aide publique." />
+
+            <fieldset className="ligne">
+              <legend>Plan de financement</legend>
+              <ChampSelect label="Bloc répétable du plan" value={form.planBloc}
+                onChange={(v) => set({ planBloc: v, planFinanceur: "", planMontant: "", planStatut: "", planAnnee: "", financeursPublics: [], lignes: form.lignes.map((l) => ({ ...l, financeurs: [] })) })}
+                candidats={p.candidats.planBloc} aucun="Aucun plan de financement" known={known}
+                propose={proposeRef(pf.planFinancement?.bloc, p.raisons.plan.bloc)}
+                hint="Bloc du formulaire avec au moins une liste (financeur) et un nombre (montant)." />
+              {form.planBloc && (
+                <>
+                  <ChampSelect label="Financeur" required value={form.planFinanceur} onChange={(v) => set({ planFinanceur: v, financeursPublics: [] })}
+                    candidats={enfants("planFinanceur")} aucun="À choisir" known={known} propose={planPropose("financeur")} />
+                  <ChampSelect label="Montant" required value={form.planMontant} onChange={(v) => set({ planMontant: v })}
+                    candidats={enfants("planMontant")} aucun="À choisir" known={known} propose={planPropose("montant")} />
+                  <ChampSelect label="Statut (facultatif)" value={form.planStatut} onChange={(v) => set({ planStatut: v })}
+                    candidats={enfants("planStatut").filter((c) => c.id !== form.planFinanceur)} aucun="Aucun" known={known} propose={planPropose("statut")}
+                    hint="Sert au taux « dont aides obtenues » (statut commençant par « obtenu »)." />
+                  <ChampSelect label="Année (facultatif)" value={form.planAnnee} onChange={(v) => set({ planAnnee: v })}
+                    candidats={enfants("planAnnee").filter((c) => c.id !== form.planFinanceur)} aucun="Aucune" known={known} propose={planPropose("annee")}
+                    hint="Prise en compte à l'étape C2, pour imputer chaque ligne du plan sur le millésime de son année." />
+                  {optionsFinanceur.length > 0 && (
+                    <fieldset className="field">
+                      <legend className="field__label">Financeurs publics</legend>
+                      <div className="choices">
+                        {optionsFinanceur.map((o) => (
+                          <label key={o}>
+                            <input type="checkbox" checked={form.financeursPublics.includes(o)}
+                              onChange={() => set({ financeursPublics: form.financeursPublics.includes(o) ? form.financeursPublics.filter((x) => x !== o) : [...form.financeursPublics, o] })} />
+                            {o}
+                          </label>
+                        ))}
+                      </div>
+                      {p.raisons.plan.financeursPublics && <p className="field__hint">Proposés : {p.raisons.plan.financeursPublics}.</p>}
+                    </fieldset>
+                  )}
+                </>
+              )}
+            </fieldset>
+
+            <ChampSelect label="Programme souhaité" value={form.programmeSouhaite} onChange={(v) => set({ programmeSouhaite: v })} candidats={p.candidats.programmeSouhaite}
+              aucun="Aucun" known={known} propose={proposeRef(pf.programmeSouhaite, p.raisons.programmeSouhaite)}
+              hint="Répartit le montant d'un financeur partagé par plusieurs lignes (ex. « État » pour DETR et DSIL)." />
+            <div className="field">
+              <label htmlFor="tauxmax">Taux maximal des aides publiques (%)</label>
+              <input id="tauxmax" className="input input--short" type="number" min={0} max={100} step="any" placeholder="facultatif"
+                value={form.tauxMaxAidesPubliques} onChange={(e) => set({ tauxMaxAidesPubliques: e.target.value })} aria-describedby="tauxmax-hint" />
+              <p id="tauxmax-hint" className="field__hint">Plafond du cumul des aides publiques. Au-delà, le dossier est signalé (anomalie non bloquante).</p>
+            </div>
+            <ChampSelect label="Motif de répartition" value={form.motifRepartition} onChange={(v) => set({ motifRepartition: v })} candidats={p.candidats.motifRepartition}
+              aucun="Aucun" known={known} propose={proposeRef(pf.motifRepartition, p.raisons.motifRepartition)}
+              hint="Annotation affichée dans l'onglet Demande de la fiche dossier, sous les lignes de financement." />
 
             {p.raisons.sansLigne && (
               <p className="notice notice--warn">
@@ -338,17 +453,33 @@ export function Parametres() {
                     <ChampSelect label="Champ du programme" required value={l.programmeChamp} onChange={(v) => setLigne(i, { programmeChamp: v })} candidats={p.candidats.programme} aucun="À choisir" known={known} />
                   )}
 
-                  <ChampSelect label="Montant demandé" value={l.montantDemande} onChange={(v) => setLigne(i, { montantDemande: v })} candidats={p.candidats.montantDemande}
-                    aucun={plusieurs ? "Aucun" : "Celui des cartes"} known={known} propose={r ? proposeRef(prop!.ligne.montantDemande, r.montantDemande) : undefined} />
+                  {form.planBloc && optionsFinanceur.length > 0 && (
+                    <fieldset className="field">
+                      <legend className="field__label">Financeurs de cette ligne</legend>
+                      <div className="choices">
+                        {optionsFinanceur.map((o) => (
+                          <label key={o}>
+                            <input type="checkbox" checked={l.financeurs.includes(o)}
+                              onChange={() => setLigne(i, { montantDemande: "", financeurs: l.financeurs.includes(o) ? l.financeurs.filter((x) => x !== o) : [...l.financeurs, o] })} />
+                            {o}
+                          </label>
+                        ))}
+                      </div>
+                      <p className="field__hint">
+                        Montant demandé = somme des lignes du plan de ces financeurs.
+                        {r && ` Proposé : ${r.financeurs}.`}
+                      </p>
+                    </fieldset>
+                  )}
+                  {l.financeurs.length === 0 && (
+                    <ChampSelect label="Montant demandé" value={l.montantDemande} onChange={(v) => setLigne(i, { montantDemande: v })}
+                      candidats={p.candidats.montantDemande.filter((c) => c.id !== form.planMontant)}
+                      aucun={plusieurs ? "Aucun" : "Celui des cartes"} known={known} propose={r ? proposeRef(prop!.ligne.montantDemande, r.montantDemande) : undefined} />
+                  )}
                   <ChampSelect label="Assiette éligible" value={l.assiette} onChange={(v) => setLigne(i, { assiette: v })} candidats={p.candidats.assiette}
                     aucun="Aucune" known={known} propose={r ? proposeRef(prop!.ligne.assiette, r.assiette) : undefined} />
                   <ChampSelect label="Taux" value={l.taux} onChange={(v) => setLigne(i, { taux: v })} candidats={p.candidats.taux}
                     aucun="Calculé (accordé ÷ assiette)" known={known} propose={r ? proposeRef(prop!.ligne.taux, r.taux) : undefined} />
-                  <div className="field">
-                    <label htmlFor={`tauxmax-${i}`}>Taux maximal (%)</label>
-                    <input id={`tauxmax-${i}`} className="input input--short" type="number" min={0} max={100} step="any" placeholder="facultatif" value={l.tauxMax} onChange={(e) => setLigne(i, { tauxMax: e.target.value })} aria-describedby={`tauxmax-${i}-hint`} />
-                    <p id={`tauxmax-${i}-hint`} className="field__hint">Au-delà, le dossier est signalé (alerte non bloquante).</p>
-                  </div>
                   <ChampSelect label="N° d'engagement juridique" value={l.numeroEJ} onChange={(v) => setLigne(i, { numeroEJ: v })} candidats={p.candidats.numeroEJ}
                     aucun="Aucun" known={known} propose={r ? proposeRef(prop!.ligne.numeroEJ, r.numeroEJ) : undefined} />
 

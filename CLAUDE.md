@@ -36,7 +36,13 @@ Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
   n'est déclaré avant l'enregistrement). Vocabulaire financier générique : millésime,
   lignes de financement (programme, montants demandé et accordé, assiette, taux, taux
   maximal, n° d'EJ).
-- **C (C1 puis C2), D** : à faire, chacune après validation de la précédente.
+- **C1 (en test)** : enveloppes (`config/enveloppes/<id>.json`, pages `/enveloppes` et
+  `/enveloppes/:id`), imputation par démarche et millésime, indicateurs (demandé,
+  programmé, accepté, engagé, reste, demandé non affecté), anomalies, jauges sur le
+  kanban et l'accueil, montant accordé sur les cartes et dans la confirmation
+  « Accepter ». Plan de financement, coût total, programme souhaité, taux d'aide publique
+  et motif de répartition dans la fiche de paramétrage et l'onglet Demande.
+- **C2, C3, D** : à faire, chacune après validation de la précédente.
 
 ## Stack
 
@@ -52,6 +58,10 @@ Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
   `@fontsource` plutôt que chargée depuis Google Fonts. Pas de police à chasse fixe :
   la pile système `ui-monospace` sert aux seuls identifiants techniques, et les
   chiffres sont en `tabular-nums`.
+- `config/enveloppes/<id>.json` (versionné) : une fiche par enveloppe (libellé, millésime,
+  montant en centimes, démarches qui l'alimentent, enveloppe mère). Seule donnée qui n'existe
+  pas dans DN ; écrite uniquement par le serveur. Le « demandé non affecté » n'est jamais
+  additionné d'une enveloppe à l'autre.
 - `config/demarches/<numéro>.json` (versionné, sans secret) : une fiche par démarche
   déclarée (libellé court, réglage `mutations`, délai cible, champs « objet » et
   « montant demandé », données financières), les champs étant désignés par leur
@@ -121,11 +131,17 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   - `GET /api/demarches/:numero/proposition` (candidats par rôle, paramétrage proposé et
     ses raisons, fiche actuelle, champs disparus de la révision) ;
   - `POST /api/demarches/:numero/dossiers/:n/state` (désactivée par défaut) ;
-  - `GET /api/dossiers/:n/demarche`, pour rediriger les anciennes adresses `/dossiers/:n`.
+  - `GET /api/dossiers/:n/demarche`, pour rediriger les anciennes adresses `/dossiers/:n` ;
+  - `GET /api/enveloppes` (avec indicateurs), `POST` ; `GET`, `PUT`, `DELETE /api/enveloppes/:id` ;
+    `GET /api/demarches/:numero/enveloppes` (bandeau du kanban).
 - `server/config.ts` : lecture, validation et écriture des fiches de `config/demarches/`,
   migration depuis l'ancienne configuration à une démarche.
 - `server/parametrage.ts` : rôles de la fiche (types acceptés, mots-clés), propositions
   automatiques, champs désignés introuvables dans la révision publiée.
+- `server/finances.ts` : données financières d'un dossier (millésime, plan de financement,
+  montants par ligne, statut financier, taux d'aide publique, anomalies), en centimes.
+- `server/enveloppes.ts` : lecture, validation et écriture de `config/enveloppes/`,
+  imputation des dossiers et indicateurs par enveloppe.
 - `server/kanban.ts` : requête et mise en forme des cartes du kanban, résumé de l'accueil.
 - `src/` : front React. Vite (port 5173) transmet `/api` au serveur Hono.
   Pages : accueil (`/`, `src/pages/Home.tsx`), kanban et vue Liste (`/demarches/:numero`),
@@ -162,6 +178,8 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   Pour une démarche hors de portée du jeton, DN répond `not_found` (« Demarche not
   found »), comme pour une démarche inexistante.
 - `IntegerNumberChamp.value` est un `BigInt`, transmis en chaîne : le convertir avec `Number`.
+  Les requêtes l'appellent `integerValue` (et `decimalValue` pour `DecimalNumberChamp`) : deux
+  types différents ne doivent pas partager le nom de champ `value` dans une même sélection.
   `DecimalNumberChamp.value` est un `Float`. Les annotations privées utilisent les mêmes types.
 - Un champ d'un bloc répétable (`RepetitionChamp.rows[].champs`) peut être désigné dans la
   fiche (rôles numériques du formulaire) : sa valeur est la somme des lignes renseignées.

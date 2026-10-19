@@ -17,7 +17,12 @@
     "millesime": {
       "source": "anneeDepot"
     },
+    "coutTotal": null,
+    "planFinancement": null,
+    "programmeSouhaite": null,
+    "tauxMaxAidesPubliques": null,
+    "motifRepartition": null,
     "lignes": []
   },
-  "valideLe": "2026-10-19T08:59:48.169Z"
+  "valideLe": "2026-10-19T09:59:04.374Z"
 }

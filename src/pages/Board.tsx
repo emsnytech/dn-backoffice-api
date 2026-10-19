@@ -3,7 +3,9 @@ import { Link, Outlet, useNavigate } from "react-router";
 import { useApi } from "../api.ts";
 import { COLUMNS, STATE_LABELS, age, demarchePath, dossierPath, filters, formatMontant, matchesSearch, type Card, type FilterId, type Kanban } from "../board.ts";
 import { KanbanCard } from "../components/KanbanCard.tsx";
-import { TransitionDialog, type PendingMove } from "../components/TransitionDialog.tsx";
+import { TransitionDialog, type AcceptImpact, type PendingMove } from "../components/TransitionDialog.tsx";
+import { Jauge } from "../components/Jauge.tsx";
+import type { EnveloppeCalculee } from "../finances.ts";
 import { canTransition, type DossierState } from "../../shared/transitions.ts";
 import type { PanelContext } from "./DossierDetail.tsx";
 
@@ -32,6 +34,7 @@ export function Board({ numero }: { numero: string }) {
   const navigate = useNavigate();
   const kanban = useApi<Kanban>(`/api/demarches/${numero}/kanban`);
   const list = useApi<{ demarches: DemarcheItem[] }>("/api/demarches?resume=0");
+  const env = useApi<{ enveloppes: EnveloppeCalculee[] }>(`/api/demarches/${numero}/enveloppes`);
   const [view, setView] = useState<"kanban" | "liste">("kanban");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterId>("tous");
@@ -55,6 +58,26 @@ export function Board({ numero }: { numero: string }) {
   const visible = active ? searched.filter(active.test) : searched;
   const canMove = Boolean(k?.mutationsEnabled);
 
+  // Reste de chaque enveloppe après acceptation : les montants accordés pas encore acceptés s'y ajoutent.
+  function acceptImpact(card: Card): AcceptImpact | null {
+    if (!env.data) return null;
+    return {
+      enveloppes: env.data.enveloppes
+        .map((e) => {
+          const lignes = e.imputations.filter((i) => i.dossier === card.number);
+          if (!lignes.length) return null;
+          const ajout = lignes.filter((i) => i.statut !== "accepte").reduce((a, i) => a + (i.accorde ?? 0), 0);
+          return { id: e.id, libelle: e.libelle, resteApres: e.indicateurs.reste - ajout };
+        })
+        .filter((x): x is AcceptImpact["enveloppes"][number] => x !== null),
+    };
+  }
+
+  function sync() {
+    kanban.reload();
+    env.reload();
+  }
+
   function askMove(card: Card, target: DossierState) {
     if (canTransition(card.state, target)) setPending({ card, target });
   }
@@ -74,7 +97,7 @@ export function Board({ numero }: { numero: string }) {
       `Dossier n° ${body.number} : ${STATE_LABELS[body.state as DossierState] ?? body.state}` +
         (options.disableNotification ? " (usager non notifié)." : "."),
     );
-    kanban.reload();
+    sync();
     setVersion((v) => v + 1);
   }
 
@@ -153,7 +176,7 @@ export function Board({ numero }: { numero: string }) {
                 ? `Synchronisé par l'API GraphQL · ${sinceLabel(k.syncedAt, now)}`
                 : "Synchronisation…"}
           </span>
-          <button type="button" onClick={kanban.reload} disabled={kanban.loading}>
+          <button type="button" onClick={sync} disabled={kanban.loading}>
             {kanban.loading ? "Synchronisation…" : "Synchroniser"}
           </button>
         </div>
@@ -170,6 +193,12 @@ export function Board({ numero }: { numero: string }) {
           {k.champsIntrouvables.map((c) => `${c.role} (« ${c.libelle} »)`).join(", ")}. Les valeurs concernées ne sont pas affichées.{" "}
           <Link to={`${demarchePath(numero)}/parametres`}>Corriger le paramétrage</Link>
         </p>
+      )}
+      {env.error && <p className="notice notice--warn" role="alert">Enveloppes : {env.error}</p>}
+      {env.data && env.data.enveloppes.length > 0 && (
+        <section className="envelope-banner" aria-label="Enveloppes alimentées par cette démarche">
+          {env.data.enveloppes.map((e) => <div key={e.id}><Jauge e={e} /></div>)}
+        </section>
       )}
       {toast && (
         <div className="toast" role="status">
@@ -288,7 +317,8 @@ export function Board({ numero }: { numero: string }) {
       )}
 
       <Outlet context={{ numero, kanban: k, askMove, version } satisfies PanelContext} />
-      <TransitionDialog pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMove} />
+      <TransitionDialog pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMove}
+        impact={pending?.target === "accepte" ? acceptImpact(pending.card) : null} />
     </>
   );
 }

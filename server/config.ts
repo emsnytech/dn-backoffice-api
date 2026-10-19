@@ -2,7 +2,7 @@
 // config/demarches/<numéro>.json par démarche, versionné, sans secret. Le back office
 // n'accède qu'à ces démarches, même si le jeton en ouvre d'autres.
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { ROLES, findDescriptor, type Role } from "./parametrage.ts";
+import { ROLES, findDescriptor, normalize, type Role } from "./parametrage.ts";
 
 export type ChampRef = { id: string; libelle: string };
 
@@ -10,18 +10,38 @@ export type ChampRef = { id: string; libelle: string };
 // rôles sont regroupés en lignes de financement (plusieurs en cas de double dotation).
 export type Millesime = { source: "anneeDepot" } | { source: "champ"; ref: ChampRef };
 export type Programme = { source: "fixe"; valeur: string } | { source: "champ"; ref: ChampRef } | null;
+// Plan de financement saisi par l'usager : bloc répétable et ses sous-champs (§ B).
+export type PlanFinancement = {
+  bloc: ChampRef;
+  financeur: ChampRef;
+  montant: ChampRef;
+  statut: ChampRef | null;
+  // Pris en compte en C2 (millésime de chaque ligne du plan).
+  annee: ChampRef | null;
+  // Options du sous-champ financeur qui comptent comme aides publiques.
+  financeursPublics: string[];
+};
 export type LigneFinancement = {
   programme: Programme;
+  // Options du sous-champ financeur dont les montants du plan sont demandés à cette ligne.
+  financeurs: string[];
   montantDemande: ChampRef | null;
   assiette: ChampRef | null;
   montantAccorde: ChampRef;
   // null : taux calculé (montant accordé ÷ assiette).
   taux: ChampRef | null;
-  // Plafond en %, pour le seul contrôle des anomalies (§ C).
-  tauxMax: number | null;
   numeroEJ: ChampRef | null;
 };
-export type Finances = { millesime: Millesime; lignes: LigneFinancement[] };
+export type Finances = {
+  millesime: Millesime;
+  coutTotal: ChampRef | null;
+  planFinancement: PlanFinancement | null;
+  programmeSouhaite: ChampRef | null;
+  // Plafond en % du cumul des aides publiques, pour le seul contrôle des anomalies (§ C).
+  tauxMaxAidesPubliques: number | null;
+  motifRepartition: ChampRef | null;
+  lignes: LigneFinancement[];
+};
 
 export type DemarcheConfig = {
   numero: number;
@@ -44,8 +64,10 @@ export async function getConfig(numero: number): Promise<DemarcheConfig | null> 
   try {
     const config = JSON.parse(await readFile(fileFor(numero), "utf8"));
     if (config.numero !== numero) return null;
-    // Fiches enregistrées avant l'étape B : pas encore de données financières.
-    return { ...config, finances: config.finances ?? defaultFinances() };
+    // Fiches enregistrées avant l'étape C1 : réglages financiers ajoutés depuis.
+    const finances = { ...defaultFinances(), ...config.finances };
+    finances.lignes = finances.lignes.map(({ tauxMax, ...l }: any) => ({ financeurs: [], ...l }));
+    return { ...config, finances };
   } catch (e: any) {
     if (e.code === "ENOENT") return null;
     throw e;
@@ -59,7 +81,15 @@ export async function listConfigs(): Promise<DemarcheConfig[]> {
   return configs.filter((c): c is DemarcheConfig => c !== null);
 }
 
-const defaultFinances = (): Finances => ({ millesime: { source: "anneeDepot" }, lignes: [] });
+const defaultFinances = (): Finances => ({
+  millesime: { source: "anneeDepot" },
+  coutTotal: null,
+  planFinancement: null,
+  programmeSouhaite: null,
+  tauxMaxAidesPubliques: null,
+  motifRepartition: null,
+  lignes: [],
+});
 
 export const defaultConfig = (numero: number, libelle: string): DemarcheConfig => ({
   numero,
@@ -105,37 +135,94 @@ function parseProgramme(v: any, revision: any): Programme {
   throw new ConfigError("Programme invalide");
 }
 
-function parseLigne(v: any, i: number, revision: any): LigneFinancement {
+// Valeurs choisies parmi les options du sous-champ financeur (liste fermée), écrites comme dans DN.
+function parseOptions(v: unknown, options: string[], name: string): string[] {
+  if (v === null || v === undefined) return [];
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) throw new ConfigError(`${name} invalides`);
+  const out: string[] = [];
+  for (const x of v as string[]) {
+    const option = options.find((o) => normalize(o).trim() === normalize(x).trim());
+    if (!option) throw new ConfigError(`${name} : « ${x} » n'est pas une option du sous-champ financeur`);
+    if (!out.includes(option)) out.push(option);
+  }
+  return out;
+}
+
+function parsePlan(v: any, revision: any): PlanFinancement | null {
+  if (v === null || v === undefined) return null;
+  const bloc = champRef(v.bloc, "planBloc", revision);
+  if (!bloc) return null;
+  // Les sous-champs doivent appartenir au bloc désigné.
+  const sous = (value: unknown, role: Role) => {
+    const r = champRef(value, role, revision);
+    if (r && findDescriptor(revision, r.id)?.blocId !== bloc.id) throw new ConfigError(`« ${r.libelle} » n'appartient pas au bloc « ${bloc.libelle} »`);
+    return r;
+  };
+  const financeur = sous(v.financeur, "planFinanceur");
+  const montant = sous(v.montant, "planMontant");
+  if (!financeur || !montant) throw new ConfigError("Plan de financement : désignez les sous-champs financeur et montant");
+  const options = findDescriptor(revision, financeur.id)?.options ?? [];
+  return {
+    bloc,
+    financeur,
+    montant,
+    statut: sous(v.statut, "planStatut"),
+    annee: sous(v.annee, "planAnnee"),
+    financeursPublics: parseOptions(v.financeursPublics, options, "Financeurs publics"),
+  };
+}
+
+function parseLigne(v: any, i: number, revision: any, plan: PlanFinancement | null): LigneFinancement {
   if (typeof v !== "object" || v === null) throw new ConfigError(`Ligne de financement ${i + 1} invalide`);
   const montantAccorde = champRef(v.montantAccorde, "montantAccorde", revision);
   if (!montantAccorde) throw new ConfigError(`Ligne de financement ${i + 1} : désignez son montant accordé`);
-  let tauxMax: number | null = null;
-  if (v.tauxMax !== null && v.tauxMax !== undefined && v.tauxMax !== "") {
-    tauxMax = Number(v.tauxMax);
-    if (!Number.isFinite(tauxMax) || tauxMax <= 0 || tauxMax > 100) throw new ConfigError(`Ligne de financement ${i + 1} : taux maximal invalide (entre 0 et 100 %)`);
+  if (Array.isArray(v.financeurs) && v.financeurs.length && !plan) {
+    throw new ConfigError(`Ligne de financement ${i + 1} : des financeurs supposent un plan de financement`);
+  }
+  const options = plan ? (findDescriptor(revision, plan.financeur.id)?.options ?? []) : [];
+  const financeurs = parseOptions(v.financeurs, options, `Ligne de financement ${i + 1}, financeurs`);
+  const montantDemande = champRef(v.montantDemande, "montantDemande", revision);
+  if (financeurs.length && montantDemande) {
+    throw new ConfigError(`Ligne de financement ${i + 1} : le montant demandé vient soit des financeurs du plan, soit d'un champ, pas des deux`);
   }
   return {
     programme: parseProgramme(v.programme, revision),
-    montantDemande: champRef(v.montantDemande, "montantDemande", revision),
+    financeurs,
+    montantDemande,
     assiette: champRef(v.assiette, "assiette", revision),
     montantAccorde,
     taux: champRef(v.taux, "taux", revision),
-    tauxMax,
     numeroEJ: champRef(v.numeroEJ, "numeroEJ", revision),
   };
+}
+
+function parseTauxMax(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n > 100) throw new ConfigError("Taux maximal des aides publiques invalide (entre 0 et 100 %)");
+  return n;
 }
 
 function parseFinances(v: any, revision: any): Finances {
   if (v === null || v === undefined) return defaultFinances();
   const lignes = Array.isArray(v.lignes) ? v.lignes : [];
   if (lignes.length > MAX_LIGNES) throw new ConfigError(`${MAX_LIGNES} lignes de financement au plus`);
-  const parsed = lignes.map((l: any, i: number) => parseLigne(l, i, revision));
+  const plan = parsePlan(v.planFinancement, revision);
+  const parsed = lignes.map((l: any, i: number) => parseLigne(l, i, revision, plan));
   if (parsed.length > 1 && parsed.some((l: LigneFinancement) => !l.programme)) {
     throw new ConfigError("Avec plusieurs lignes de financement, chaque ligne doit avoir un programme");
   }
   const ids = parsed.map((l: LigneFinancement) => l.montantAccorde.id);
   if (new Set(ids).size !== ids.length) throw new ConfigError("Deux lignes de financement ne peuvent pas partager le même montant accordé");
-  return { millesime: parseMillesime(v.millesime, revision), lignes: parsed };
+  return {
+    millesime: parseMillesime(v.millesime, revision),
+    coutTotal: champRef(v.coutTotal, "coutTotal", revision),
+    planFinancement: plan,
+    programmeSouhaite: champRef(v.programmeSouhaite, "programmeSouhaite", revision),
+    tauxMaxAidesPubliques: parseTauxMax(v.tauxMaxAidesPubliques),
+    motifRepartition: champRef(v.motifRepartition, "motifRepartition", revision),
+    lignes: parsed,
+  };
 }
 
 // Valide une fiche envoyée par le front : seuls les réglages connus sont gardés. `revision`
@@ -147,6 +234,12 @@ export function parseConfig(numero: number, body: any, revision: any): DemarcheC
   const delai = Number(body.delaiCibleJours);
   if (!Number.isInteger(delai) || delai < 1 || delai > 3650) throw new ConfigError("Délai cible invalide (1 à 3650 jours)");
   if (typeof body.mutations !== "boolean") throw new ConfigError("Réglage « changements d'état » invalide");
+  const finances = parseFinances(body.finances, revision);
+  const montantDemande = champRef(body.champs?.montantDemande, "montantDemande", revision);
+  // Le sous-champ montant du plan additionnerait tous les financeurs (§ B).
+  if (montantDemande && montantDemande.id === finances.planFinancement?.montant.id) {
+    throw new ConfigError("Le montant demandé des cartes ne peut pas être le montant du plan de financement : il est calculé à partir des financeurs des lignes");
+  }
   return {
     numero,
     libelle,
@@ -154,9 +247,9 @@ export function parseConfig(numero: number, body: any, revision: any): DemarcheC
     delaiCibleJours: delai,
     champs: {
       objet: champRef(body.champs?.objet, "objet", revision),
-      montantDemande: champRef(body.champs?.montantDemande, "montantDemande", revision),
+      montantDemande,
     },
-    finances: parseFinances(body.finances, revision),
+    finances,
     valideLe: new Date().toISOString(),
   };
 }

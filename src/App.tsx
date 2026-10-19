@@ -4,6 +4,8 @@ import { Board } from "./pages/Board.tsx";
 import { DossierDetail } from "./pages/DossierDetail.tsx";
 import { Home } from "./pages/Home.tsx";
 import { Parametres } from "./pages/Parametres.tsx";
+import { Enveloppes } from "./pages/Enveloppes.tsx";
+import { Enveloppe } from "./pages/Enveloppe.tsx";
 import { dossierPath } from "./board.ts";
 
 // key={numero} : changer de démarche remonte le kanban avec un état vierge.
@@ -37,6 +39,8 @@ export function App() {
       </Route>
       <Route path="/demarches/:numero/parametres" element={<Parametres />} />
       <Route path="/dossiers/:number" element={<LegacyDossier />} />
+      <Route path="/enveloppes" element={<Enveloppes />} />
+      <Route path="/enveloppes/:id" element={<Enveloppe />} />
     </Routes>
   );
 }

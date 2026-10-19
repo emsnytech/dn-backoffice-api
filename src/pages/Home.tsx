@@ -4,6 +4,8 @@ import { Link, useNavigate } from "react-router";
 import { useApi } from "../api.ts";
 import { COLUMNS, DEMARCHE_STATES, demarchePath } from "../board.ts";
 import { AddDemarcheDialog } from "../components/AddDemarcheDialog.tsx";
+import { Jauge } from "../components/Jauge.tsx";
+import type { EnveloppeCalculee } from "../finances.ts";
 
 type Summary = {
   numero: number;
@@ -20,6 +22,8 @@ export function Home() {
   const navigate = useNavigate();
   const home = useApi<{ mutationsGlobal: boolean; demarches: Summary[] }>("/api/demarches");
   const [adding, setAdding] = useState(false);
+  // Jauges réduites par démarche ; jamais de total transverse entre enveloppes (§ C).
+  const env = useApi<{ enveloppes: EnveloppeCalculee[] }>("/api/enveloppes");
 
   return (
     <>
@@ -30,10 +34,11 @@ export function Home() {
         </div>
         <div className={home.error ? "sync sync--error" : "sync"} role="status">
           <span>{home.error ? "Échec de la synchronisation" : home.data ? "Synchronisé par l'API GraphQL" : "Synchronisation…"}</span>
-          <button type="button" onClick={home.reload} disabled={home.loading}>
+          <button type="button" onClick={() => { home.reload(); env.reload(); }} disabled={home.loading}>
             {home.loading ? "Synchronisation…" : "Synchroniser"}
           </button>
         </div>
+        <nav className="app-header__nav" aria-label="Rubriques"><Link to="/enveloppes">Enveloppes</Link></nav>
         <button type="button" className="btn btn--primary" onClick={() => setAdding(true)}>Ajouter une démarche</button>
       </header>
 
@@ -68,6 +73,8 @@ export function Home() {
               ) : (
                 <p className="dialog__error" role="alert">Inaccessible avec le jeton actuel. Démarche Numérique a répondu : {d.error}</p>
               )}
+
+              {env.data?.enveloppes.filter((e) => e.demarches.includes(d.numero)).map((e) => <Jauge key={e.id} e={e} compact />)}
 
               <div className="demarche-card__links">
                 {d.accessible && <Link to={demarchePath(d.numero)}>Ouvrir le kanban</Link>}

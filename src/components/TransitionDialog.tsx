@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { STATE_LABELS, type Card } from "../board.ts";
+import { STATE_LABELS, formatMontant, type Card } from "../board.ts";
+import { formatCentimes } from "../finances.ts";
 import { MOTIVATION_ALLOWED, MOTIVATION_REQUIRED, type DossierState } from "../../shared/transitions.ts";
 
 export type PendingMove = { card: Card; target: DossierState };
+
+// Effet financier d'une acceptation (§ C) : reste de chaque enveloppe concernée après décision.
+export type AcceptImpact = { enveloppes: { id: string; libelle: string; resteApres: number }[] };
 
 // Question posée avant chaque mutation (docs/SPEC-kanban.md § 7).
 function question({ card, target }: PendingMove) {
@@ -26,9 +30,10 @@ type Props = {
   onCancel: () => void;
   // Résout quand DN a confirmé ; rejette avec le message d'erreur de DN sinon.
   onConfirm: (options: { motivation: string; disableNotification: boolean }) => Promise<void>;
+  impact?: AcceptImpact | null;
 };
 
-export function TransitionDialog({ pending, onCancel, onConfirm }: Props) {
+export function TransitionDialog({ pending, onCancel, onConfirm, impact }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [motivation, setMotivation] = useState("");
   const [disableNotification, setDisableNotification] = useState(false);
@@ -86,6 +91,23 @@ export function TransitionDialog({ pending, onCancel, onConfirm }: Props) {
             Le changement est appliqué immédiatement dans Démarche Numérique.
           </span>
         </p>
+        {pending.target === "accepte" && pending.card.financement.length > 0 && (
+          <div className="dialog__finance">
+            {pending.card.financement.every((l) => !l.accorde) ? (
+              <p className="notice notice--warn">Le montant accordé n'est pas renseigné : ce dossier ne sera pas imputé.</p>
+            ) : (
+              <p>
+                Montant accordé :{" "}
+                {pending.card.financement.map((l) => `${pending.card.financement.length > 1 ? `${l.programme ?? "?"} ` : ""}${l.accorde === null ? "non renseigné" : formatMontant(l.accorde)}`).join(" · ")}
+              </p>
+            )}
+            {impact?.enveloppes.map((e) => (
+              <p key={e.id} className={e.resteApres < 0 ? "dialog__error" : "muted"}>
+                Reste de l'enveloppe « {e.libelle} » après acceptation : {formatCentimes(e.resteApres)}
+              </p>
+            ))}
+          </div>
+        )}
         {allowed && (
           <label>
             Motivation {required ? "(obligatoire)" : "(facultative)"}

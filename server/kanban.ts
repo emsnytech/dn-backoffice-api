@@ -3,8 +3,15 @@
 import { MUTATIONS_ENABLED, gql } from "./dn.ts";
 import type { ChampRef, DemarcheConfig } from "./config.ts";
 import { introuvables } from "./parametrage.ts";
+import { computeDossier } from "./finances.ts";
 
-const NUMBER_VALUE = `... on DecimalNumberChamp { value } ... on IntegerNumberChamp { value }`;
+// Deux types différents ne peuvent pas partager le nom de champ value : alias distincts.
+const NUMBER_VALUE = `... on DecimalNumberChamp { decimalValue: value } ... on IntegerNumberChamp { integerValue: value }`;
+// Champs et annotations avec leurs valeurs, lignes des blocs répétables comprises (§ B et § C).
+const VALUES = `
+  __typename id champDescriptorId label stringValue
+  ${NUMBER_VALUE}
+  ... on RepetitionChamp { rows { champs { __typename champDescriptorId stringValue ${NUMBER_VALUE} } } }`;
 const REVISION_IDS = `__typename id label ... on RepetitionChampDescriptor { champDescriptors { __typename id label } }`;
 
 const KANBAN_QUERY = `
@@ -28,12 +35,10 @@ const KANBAN_QUERY = `
           messages { id }
           avis { id reponse }
           labels { name color }
-          annotations { id }
+          annotations { ${VALUES} }
           champs {
-            __typename id champDescriptorId label stringValue
+            ${VALUES}
             ... on PieceJustificativeChamp { files { filename } }
-            ${NUMBER_VALUE}
-            ... on RepetitionChamp { rows { champs { champDescriptorId ${NUMBER_VALUE} } } }
           }
         }
       }
@@ -68,12 +73,13 @@ function toNumber(value: unknown) {
 // lignes renseignées (null si aucune ne l'est).
 function numberValue(champs: any[], ref: ChampRef | null) {
   if (!ref) return null;
+  const value = (c: any) => toNumber(c.decimalValue ?? c.integerValue);
   const top = findChamp(champs, ref);
-  if (top) return toNumber(top.value);
+  if (top) return value(top);
   const values = champs
     .filter((c) => c.__typename === "RepetitionChamp")
     .flatMap((c) => c.rows.flatMap((r: any) => r.champs.filter((x: any) => x.champDescriptorId === ref.id)))
-    .map((x: any) => toNumber(x.value))
+    .map(value)
     .filter((n: number | null): n is number => n !== null);
   return values.length ? values.reduce((a: number, b: number) => a + b, 0) : null;
 }
@@ -81,6 +87,8 @@ function numberValue(champs: any[], ref: ChampRef | null) {
 function toCard(d: any, config: DemarcheConfig) {
   const objet = findChamp(d.champs, config.champs.objet);
   const pj = d.champs.filter((c: any) => c.__typename === "PieceJustificativeChamp");
+  // Avec un plan de financement, le montant des cartes est le demandé sur nos programmes (§ B).
+  const fin = config.finances.lignes.length ? computeDossier(d, config) : null;
   return {
     number: d.number,
     state: d.state,
@@ -89,7 +97,11 @@ function toCard(d: any, config: DemarcheConfig) {
     dateTraitement: d.dateTraitement,
     demandeur: demandeur(d.demandeur),
     objet: objet?.stringValue || null,
-    montant: numberValue(d.champs, config.champs.montantDemande),
+    montant: fin?.demandeNosProgrammes != null ? fin.demandeNosProgrammes / 100 : numberValue(d.champs, config.champs.montantDemande),
+    // Montant accordé par ligne de financement (en euros), et statut financier.
+    financement: fin
+      ? fin.lignes.map((l) => ({ programme: l.programme, accorde: l.accorde === null ? null : l.accorde / 100, statut: l.statut }))
+      : [],
     instructeurs: d.instructeurs,
     messages: d.messages.length,
     avisDemandes: d.avis.filter((a: any) => !a.reponse).length,
@@ -100,16 +112,22 @@ function toCard(d: any, config: DemarcheConfig) {
   };
 }
 
-export async function fetchKanban(config: DemarcheConfig) {
+// Dossiers bruts d'une démarche, avec les valeurs des champs et annotations (kanban et enveloppes).
+export async function fetchDemarcheDossiers(numero: number) {
   const nodes: any[] = [];
   let demarche: any;
   let after: string | null = null;
   do {
-    const data: any = await gql(KANBAN_QUERY, { number: config.numero, after });
+    const data: any = await gql(KANBAN_QUERY, { number: numero, after });
     demarche = data.demarche;
     nodes.push(...demarche.dossiers.nodes);
     after = demarche.dossiers.pageInfo.hasNextPage ? demarche.dossiers.pageInfo.endCursor : null;
   } while (after);
+  return { demarche, nodes };
+}
+
+export async function fetchKanban(config: DemarcheConfig) {
+  const { demarche, nodes } = await fetchDemarcheDossiers(config.numero);
 
   // « Moi » = DN_INSTRUCTEUR_EMAIL, s'il fait partie des instructeurs de la démarche.
   const email = process.env.DN_INSTRUCTEUR_EMAIL;

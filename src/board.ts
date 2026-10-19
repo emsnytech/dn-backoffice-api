@@ -9,6 +9,8 @@ export type Card = {
   demandeur: { label: string; siret: string | null };
   objet: string | null;
   montant: number | null;
+  // Montant accordé (en euros) et statut financier par ligne de financement (§ C).
+  financement: { programme: string | null; accorde: number | null; statut: string }[];
   instructeurs: { id: string; email: string }[];
   messages: number;
   avisDemandes: number;

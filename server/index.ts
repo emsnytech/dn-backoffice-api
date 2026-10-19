@@ -14,7 +14,20 @@ import {
   fetchDossier,
   fetchDossierDemarche,
 } from "./dn.ts";
-import { demandeur, fetchKanban, fetchSummary } from "./kanban.ts";
+import { demandeur, fetchDemarcheDossiers, fetchKanban, fetchSummary } from "./kanban.ts";
+import { computeDossier } from "./finances.ts";
+import {
+  computeEnveloppes,
+  deleteEnveloppe,
+  getEnveloppe,
+  isEnveloppeId,
+  listEnveloppes,
+  newEnveloppeId,
+  parseEnveloppe,
+  saveEnveloppe,
+  type DemarcheDossiers,
+  type Enveloppe,
+} from "./enveloppes.ts";
 import { introuvables, proposition } from "./parametrage.ts";
 import {
   ConfigError,
@@ -146,12 +159,107 @@ app.get("/demarches/:numero{[0-9]+}/dossiers/:number{[0-9]+}", declared, async (
   const { numero } = c.get("config");
   const dossier = await fetchDossier(numero, Number(c.req.param("number")));
   if (!dossier) return c.json({ error: "Dossier introuvable dans cette démarche" }, 404);
+  const f = c.get("config").finances;
   return c.json({
     ...dossier,
     demandeurLabel: demandeur(dossier.demandeur).label,
+    // Données financières (§ C) : plan de financement, lignes, taux d'aide publique, anomalies.
+    finance: f.lignes.length || f.planFinancement || f.coutTotal ? computeDossier(dossier, c.get("config")) : null,
     // Page instructeur du dossier dans DN (le numéro de démarche est l'identifiant de procédure).
     dnUrl: `${DN_WEB_ORIGIN}/procedures/${numero}/dossiers/${dossier.number}`,
   });
+});
+
+// --- Enveloppes (§ C) --------------------------------------------------------
+
+// Dossiers des démarches qui alimentent les enveloppes. Une démarche inaccessible est
+// signalée en anomalie dans ses enveloppes, sans bloquer les autres.
+async function calculerEnveloppes(enveloppes: Enveloppe[]) {
+  const numeros = [...new Set(enveloppes.flatMap((e) => e.demarches))];
+  const sources = new Map<number, DemarcheDossiers>();
+  const echecs: { numero: number; message: string }[] = [];
+  await Promise.all(
+    numeros.map(async (numero) => {
+      const config = await getConfig(numero);
+      if (!config) return echecs.push({ numero, message: "démarche non déclarée" });
+      try {
+        const { demarche, nodes } = await fetchDemarcheDossiers(numero);
+        sources.set(numero, { config, introuvables: introuvables(config, demarche.activeRevision), dossiers: nodes });
+      } catch (e: any) {
+        if (!e.dnMessage) console.error(e);
+        echecs.push({ numero, message: e.dnMessage ?? "erreur lors de l'appel à l'API Démarche Numérique" });
+      }
+    }),
+  );
+  const calculees = computeEnveloppes(enveloppes, sources);
+  for (const { numero, message } of echecs) {
+    for (const e of calculees.filter((x) => x.demarches.includes(numero))) {
+      e.anomalies.push({ code: "demarche_inaccessible", message: `Démarche ${numero} non comptée : ${message}`, grave: true, demarche: numero, dossier: null });
+    }
+  }
+  return calculees;
+}
+
+const libelles = async () => Object.fromEntries((await listConfigs()).map((d) => [d.numero, d.libelle]));
+
+app.get("/enveloppes", async (c) => {
+  const calculees = await calculerEnveloppes(await listEnveloppes());
+  return c.json({ enveloppes: calculees, demarches: await libelles() });
+});
+
+app.get("/enveloppes/:id", async (c) => {
+  const all = await listEnveloppes();
+  const e = (await calculerEnveloppes(all)).find((x) => x.id === c.req.param("id"));
+  if (!e) return c.json({ error: "Enveloppe introuvable" }, 404);
+  return c.json({ ...e, demarchesLibelles: await libelles(), autres: all.filter((x) => x.id !== e.id).map(({ id, libelle }) => ({ id, libelle })) });
+});
+
+async function writeEnveloppe(c: Context, id: string | null) {
+  const notJson = requireJson(c);
+  if (notJson) return notJson;
+  const all = await listEnveloppes();
+  const declared = (await listConfigs()).map((d) => d.numero);
+  const body = await c.req.json();
+  try {
+    const e = parseEnveloppe(id ?? newEnveloppeId(String(body?.libelle ?? ""), all), body, declared, all.filter((x) => x.id !== id));
+    await saveEnveloppe(e);
+    console.log(`Enveloppe ${e.id} ${id ? "modifiée" : "créée"}`);
+    return c.json(e, id ? 200 : 201);
+  } catch (err) {
+    if (err instanceof ConfigError) return c.json({ error: err.message }, 422);
+    throw err;
+  }
+}
+
+app.post("/enveloppes", (c) => writeEnveloppe(c, null));
+
+app.put("/enveloppes/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!(await getEnveloppe(id))) return c.json({ error: "Enveloppe introuvable" }, 404);
+  return writeEnveloppe(c, id);
+});
+
+app.delete("/enveloppes/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!isEnveloppeId(id) || !(await getEnveloppe(id))) return c.json({ error: "Enveloppe introuvable" }, 404);
+  const filles = (await listEnveloppes()).filter((e) => e.parent === id);
+  if (filles.length) return c.json({ error: `Enveloppe mère de : ${filles.map((e) => e.libelle).join(", ")}. Retirez d'abord cette délégation.` }, 409);
+  await deleteEnveloppe(id);
+  console.log(`Enveloppe ${id} supprimée`);
+  return c.body(null, 204);
+});
+
+// Enveloppes alimentées par une démarche (bandeau du kanban), avec les imputations de ses dossiers.
+app.get("/demarches/:numero{[0-9]+}/enveloppes", declared, async (c) => {
+  const { numero } = c.get("config");
+  const all = await listEnveloppes();
+  const concernees = all.filter((e) => e.demarches.includes(numero));
+  const calculees = (await calculerEnveloppes(concernees)).map((e) => ({
+    ...e,
+    imputations: e.imputations.filter((i) => i.demarche === numero),
+    anomalies: e.anomalies.filter((a) => a.demarche === numero || a.demarche === 0),
+  }));
+  return c.json({ enveloppes: calculees });
 });
 
 // Anciennes adresses /dossiers/:n : démarche du dossier, si elle est déclarée.

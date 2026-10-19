@@ -89,6 +89,16 @@ export function KanbanCard({ card, to, delaiCibleJours, move }: Props) {
             <span>{formatMontant(card.montant)}</span>
           </div>
         )}
+        {card.financement.some((l) => l.accorde !== null) && (
+          <div className="card__amount">
+            <span>Accordé</span>
+            <span>
+              {card.financement.length > 1
+                ? card.financement.map((l) => `${l.programme ?? "?"} ${l.accorde === null ? "—" : formatMontant(l.accorde)}`).join(" · ")
+                : formatMontant(card.financement[0].accorde!)}
+            </span>
+          </div>
+        )}
       </Link>
 
       {move && targets.length > 0 && (

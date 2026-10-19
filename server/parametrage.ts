@@ -10,7 +10,11 @@ export type Descripteur = {
   type: string;
   source: "formulaire" | "annotation";
   position: string;
+  // Champ d'un bloc répétable : libellé et identifiant du bloc.
   bloc?: string;
+  blocId?: string;
+  // Bloc répétable : types de ses sous-champs.
+  sousTypes?: string[];
   options?: string[];
 };
 
@@ -29,13 +33,21 @@ export function descripteurs(revision: any): Descripteur[] {
     for (const d of list ?? []) {
       if (STRUCTURE.has(d.__typename)) continue;
       pos++;
-      out.push({ id: d.id, libelle: d.label, type: d.__typename, source, position: `${pos}`, ...(d.options && { options: d.options }) });
-      if (d.__typename !== "RepetitionChampDescriptor") continue;
+      const repetition = d.__typename === "RepetitionChampDescriptor";
+      out.push({
+        id: d.id, libelle: d.label, type: d.__typename, source, position: `${pos}`,
+        ...(d.options && { options: d.options }),
+        ...(repetition && { sousTypes: (d.champDescriptors ?? []).map((c: any) => c.__typename) }),
+      });
+      if (!repetition) continue;
       let k = 0;
       for (const c of d.champDescriptors ?? []) {
         if (STRUCTURE.has(c.__typename)) continue;
         k++;
-        out.push({ id: c.id, libelle: `${d.label} › ${c.label}`, type: c.__typename, source, position: `${pos}.${k}`, bloc: d.label });
+        out.push({
+          id: c.id, libelle: `${d.label} › ${c.label}`, type: c.__typename, source, position: `${pos}.${k}`, bloc: d.label, blocId: d.id,
+          ...(c.options && { options: c.options }),
+        });
       }
     }
   }
@@ -88,11 +100,41 @@ export const ROLES = {
     accepte: (d) => !d.bloc && (d.type === EJ || (d.source === "annotation" && d.type === "TextChampDescriptor")),
     mots: ["engagement", "EJ", "Chorus"],
   },
+  coutTotal: {
+    nom: "Coût total",
+    accepte: (d) => d.source === "formulaire" && !d.bloc && NOMBRE.has(d.type),
+    mots: ["coût", "total", "HT"],
+  },
+  planBloc: {
+    nom: "Plan de financement",
+    accepte: (d) =>
+      d.source === "formulaire" && d.type === "RepetitionChampDescriptor" &&
+      Boolean(d.sousTypes?.includes(LISTE)) && Boolean(d.sousTypes?.some((t) => NOMBRE.has(t))),
+    mots: ["financement", "financeur", "plan"],
+  },
+  planFinanceur: { nom: "Financeur (plan)", accepte: (d) => Boolean(d.blocId) && d.type === LISTE, mots: ["financeur"] },
+  planMontant: { nom: "Montant (plan)", accepte: (d) => Boolean(d.blocId) && NOMBRE.has(d.type), mots: ["montant"] },
+  planStatut: { nom: "Statut (plan)", accepte: (d) => Boolean(d.blocId) && d.type === LISTE, mots: ["statut", "état"] },
+  planAnnee: {
+    nom: "Année (plan)",
+    accepte: (d) => Boolean(d.blocId) && (d.type === "IntegerNumberChampDescriptor" || d.type === LISTE || d.type === "TextChampDescriptor"),
+    mots: ["année", "exercice"],
+  },
+  programmeSouhaite: {
+    nom: "Programme souhaité",
+    accepte: (d) => d.source === "formulaire" && !d.bloc && d.type === LISTE,
+    mots: ["programme", "souhaité", "dotation"],
+  },
+  motifRepartition: {
+    nom: "Motif de répartition",
+    accepte: (d) => d.source === "annotation" && !d.bloc && TEXTE.has(d.type),
+    mots: ["motif", "répartition"],
+  },
 } satisfies Record<string, RoleDef>;
 
 export type Role = keyof typeof ROLES;
 
-const normalize = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+export const normalize = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const tokens = (s: string) => normalize(s).replace(/([€%])/g, " $1 ").split(/[^a-z0-9€%]+/).filter(Boolean);
 
 // Mot-clé reconnu au début d'un mot du libellé ; les mots courts (HT, EJ, €, %) doivent être exacts.
@@ -104,9 +146,12 @@ function contient(libelle: string, mot: string) {
 type Choix = { ref: ChampRef | null; raison: string };
 const ref = (d: Descripteur): ChampRef => ({ id: d.id, libelle: d.libelle });
 
+// Libellés de comptage (« Nombre total de salariés ») : jamais proposés par mot-clé.
+const COMPTAGE = ["nombre", "etpt", "effectif"];
+
 function proposer(candidats: Descripteur[], mots: string[], repli: { seul?: string; premier?: string; aucun?: string } = {}): Choix {
   for (const mot of mots) {
-    const d = candidats.find((c) => contient(c.libelle, mot));
+    const d = candidats.find((c) => contient(c.libelle, mot) && !COMPTAGE.some((x) => contient(c.libelle, x)));
     if (d) return { ref: ref(d), raison: `libellé contenant « ${mot} »` };
   }
   if (repli.seul && candidats.length === 1) return { ref: ref(candidats[0]), raison: repli.seul };
@@ -114,6 +159,10 @@ function proposer(candidats: Descripteur[], mots: string[], repli: { seul?: stri
   if (repli.aucun) return { ref: null, raison: repli.aucun };
   return { ref: null, raison: candidats.length ? "aucun libellé reconnu : à choisir" : "aucun champ de ce type" };
 }
+
+// Financeurs publics proposés par défaut (§ B), reconnus dans les options du sous-champ financeur.
+const FINANCEURS_PUBLICS = ["État", "Région", "Département", "Intercommunalité", "Union européenne", "Autre financeur public"];
+const memeOption = (option: string, nom: string) => normalize(option).includes(normalize(nom));
 
 const MOTS_VIDES = new Set(["de", "du", "la", "le", "les", "des", "au", "aux", "en", "et", "pour", "sur"]);
 
@@ -138,7 +187,7 @@ function libelleCourt(title: string) {
   return `${cut.slice(0, cut.lastIndexOf(" ") > 60 ? cut.lastIndexOf(" ") : 119)}…`;
 }
 
-type RaisonsLigne = Record<"programme" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "numeroEJ", string>;
+type RaisonsLigne = Record<"programme" | "financeurs" | "montantDemande" | "assiette" | "montantAccorde" | "taux" | "numeroEJ", string>;
 
 export function proposition(demarche: any) {
   const all = descripteurs(demarche.activeRevision);
@@ -146,8 +195,30 @@ export function proposition(demarche: any) {
     (Object.keys(ROLES) as Role[]).map((r) => [r, all.filter(ROLES[r].accepte)]),
   ) as Record<Role, Descripteur[]>;
 
+  // Plan de financement : un bloc répétable avec une liste (financeur) et un nombre (montant).
+  const bloc = proposer(candidats.planBloc, ROLES.planBloc.mots, { seul: "seul bloc répétable avec une liste et un nombre" });
+  const enfants = (role: Role) => candidats[role].filter((c) => bloc.ref && c.blocId === bloc.ref.id);
+  const financeur = bloc.ref ? proposer(enfants("planFinanceur"), ["financeur"], { premier: "première liste du bloc" }) : null;
+  const montantPlan = bloc.ref ? proposer(enfants("planMontant"), ["montant"], { premier: "premier nombre du bloc" }) : null;
+  const statut = bloc.ref
+    ? proposer(enfants("planStatut").filter((c) => c.id !== financeur?.ref?.id), ["statut", "état"], { aucun: "aucune liste « statut » dans le bloc" })
+    : null;
+  const annee = bloc.ref ? proposer(enfants("planAnnee").filter((c) => c.id !== financeur?.ref?.id), ["année", "exercice"], { aucun: "aucun sous-champ « année »" }) : null;
+  const optionsFinanceur = financeur?.ref ? (all.find((d) => d.id === financeur.ref!.id)?.options ?? []) : [];
+  const financeursPublics = optionsFinanceur.filter((o) => FINANCEURS_PUBLICS.some((n) => memeOption(o, n)));
+  const plan = bloc.ref && financeur?.ref && montantPlan?.ref
+    ? { bloc: bloc.ref, financeur: financeur.ref, montant: montantPlan.ref, statut: statut?.ref ?? null, annee: annee?.ref ?? null, financeursPublics }
+    : null;
+  const financeursLigne = optionsFinanceur.filter((o) => memeOption(o, "État")).slice(0, 1);
+
   const objet = proposer(candidats.objet, ROLES.objet.mots, { premier: "premier champ texte du formulaire" });
-  const montantDemande = proposer(candidats.montantDemande, ROLES.montantDemande.mots, { seul: "seul champ nombre du formulaire" });
+  // Avec un plan, le montant demandé des cartes se calcule à partir des financeurs des lignes.
+  const montantDemande = plan
+    ? { ref: null, raison: "calculé à partir du plan de financement (financeurs des lignes)" }
+    : proposer(candidats.montantDemande, ROLES.montantDemande.mots, { seul: "seul champ nombre du formulaire" });
+  const coutTotal = proposer(candidats.coutTotal, ROLES.coutTotal.mots);
+  const programmeSouhaite = proposer(candidats.programmeSouhaite, ROLES.programmeSouhaite.mots, { aucun: "aucune liste « programme » dans le formulaire" });
+  const motif = proposer(candidats.motifRepartition, ROLES.motifRepartition.mots, { aucun: "aucune annotation « motif » ou « répartition »" });
   const millesime = proposer(candidats.millesime, ROLES.millesime.mots, {
     aucun: "aucun champ « année », « millésime » ou « exercice » : année de dépôt",
   });
@@ -174,21 +245,24 @@ export function proposition(demarche: any) {
     const pick = (role: Role, repli?: Parameters<typeof proposer>[2]) =>
       plusieurs ? proposerPourLigne(candidats[role], role, accorde) : proposer(candidats[role], ROLES[role].mots, repli);
     const programme = plusieurs ? null : proposer(candidats.programme, ROLES.programme.mots);
-    const dem = plusieurs ? pick("montantDemande") : { ref: null, raison: "celui des cartes (une seule ligne)" };
+    const dem = plan && financeursLigne.length
+      ? { ref: null, raison: "calculé à partir du plan de financement" }
+      : plusieurs ? pick("montantDemande") : { ref: null, raison: "celui des cartes (une seule ligne)" };
     const assiette = pick("assiette");
     const taux = pick("taux", { aucun: "aucune annotation « taux » : taux calculé (accordé ÷ assiette)" });
     const ej = pick("numeroEJ");
     lignes.push({
       programme: programme?.ref ? { source: "champ", ref: programme.ref } : null,
+      financeurs: plan ? financeursLigne : [],
       montantDemande: dem.ref,
       assiette: assiette.ref,
       montantAccorde: accorde,
       taux: taux.ref,
-      tauxMax: null,
       numeroEJ: ej.ref,
     });
     raisonsLignes.push({
       programme: programme ? programme.raison : "à renseigner : plusieurs lignes",
+      financeurs: !plan ? "aucun plan de financement" : financeursLigne.length ? "option contenant « État »" : "à choisir",
       montantDemande: dem.raison,
       assiette: assiette.raison,
       montantAccorde: raisonAccorde,
@@ -206,6 +280,11 @@ export function proposition(demarche: any) {
       champs: { objet: objet.ref, montantDemande: montantDemande.ref },
       finances: {
         millesime: millesime.ref ? { source: "champ" as const, ref: millesime.ref } : { source: "anneeDepot" as const },
+        coutTotal: coutTotal.ref,
+        planFinancement: plan,
+        programmeSouhaite: programmeSouhaite.ref,
+        tauxMaxAidesPubliques: null,
+        motifRepartition: motif.ref,
         lignes,
       },
     },
@@ -213,6 +292,17 @@ export function proposition(demarche: any) {
       objet: objet.raison,
       montantDemande: montantDemande.raison,
       millesime: millesime.raison,
+      coutTotal: coutTotal.raison,
+      plan: {
+        bloc: bloc.raison,
+        financeur: financeur?.raison ?? null,
+        montant: montantPlan?.raison ?? null,
+        statut: statut?.raison ?? null,
+        annee: annee?.raison ?? null,
+        financeursPublics: financeur?.ref ? "options État, Région, Département, Intercommunalité, Union européenne, Autre financeur public" : null,
+      },
+      programmeSouhaite: programmeSouhaite.raison,
+      motifRepartition: motif.raison,
       lignes: raisonsLignes,
       sansLigne: accordes.length ? null : "Aucune annotation privée de type nombre dans cette démarche",
     },
@@ -228,7 +318,19 @@ export function introuvables(config: DemarcheConfig, revision: any) {
   const checkProgramme = (p: Programme, role: string) => p?.source === "champ" && check(p.ref, role);
   check(config.champs.objet, ROLES.objet.nom);
   check(config.champs.montantDemande, ROLES.montantDemande.nom);
-  if (config.finances.millesime.source === "champ") check(config.finances.millesime.ref, ROLES.millesime.nom);
+  const f = config.finances;
+  if (f.millesime.source === "champ") check(f.millesime.ref, ROLES.millesime.nom);
+  check(f.coutTotal, ROLES.coutTotal.nom);
+  check(f.programmeSouhaite, ROLES.programmeSouhaite.nom);
+  check(f.motifRepartition, ROLES.motifRepartition.nom);
+  if (f.planFinancement) {
+    const p = f.planFinancement;
+    check(p.bloc, ROLES.planBloc.nom);
+    check(p.financeur, ROLES.planFinanceur.nom);
+    check(p.montant, ROLES.planMontant.nom);
+    check(p.statut, ROLES.planStatut.nom);
+    check(p.annee, ROLES.planAnnee.nom);
+  }
   config.finances.lignes.forEach((l, i) => {
     const suffix = config.finances.lignes.length > 1 ? ` (ligne ${i + 1})` : "";
     checkProgramme(l.programme, ROLES.programme.nom + suffix);

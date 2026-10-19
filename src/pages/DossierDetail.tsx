@@ -6,6 +6,7 @@ import { Link, useNavigate, useOutletContext, useParams } from "react-router";
 import { useApi } from "../api.ts";
 import { GeoMap } from "../GeoMap.tsx";
 import { MessageBody } from "../components/MessageBody.tsx";
+import { Financement } from "../components/Financement.tsx";
 import { EVENTS, StateBadge, formatDate } from "../format.tsx";
 import { age, demarchePath, dossierPath, formatMontant, type Card, type Kanban } from "../board.ts";
 import { TRANSITIONS, type DossierState } from "../../shared/transitions.ts";
@@ -307,6 +308,7 @@ export function DossierDetail() {
                       {card?.montant !== null && card?.montant !== undefined && (<><dt>Montant demandé</dt><dd className="num">{formatMontant(card.montant)}</dd></>)}
                     </dl>
                   </section>
+                  {d.finance && <Financement f={d.finance} />}
                   <section>
                     <h2>Champs du formulaire</h2>
                     <Champs champs={champs} descriptors={rev.champDescriptors} />

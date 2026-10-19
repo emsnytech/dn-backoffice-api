@@ -38,7 +38,7 @@ const CHAMP_DESCRIPTOR = `
     ... on DropDownListChampDescriptor { options otherOption }
     ... on MultipleDropDownListChampDescriptor { options }
     ... on RepetitionChampDescriptor {
-      champDescriptors { __typename id label description required }
+      champDescriptors { __typename id label description required ... on DropDownListChampDescriptor { options } }
     }
   }`;
 
@@ -46,6 +46,8 @@ const CHAMP = `
   fragment ChampFields on Champ {
     __typename id champDescriptorId label stringValue
     ... on MultipleDropDownListChamp { values }
+    ... on DecimalNumberChamp { decimalValue: value }
+    ... on IntegerNumberChamp { integerValue: value }
     ... on CarteChamp { geoAreas { id source description geometry { type coordinates } } }
   }`;
 
