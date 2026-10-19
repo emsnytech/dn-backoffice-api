@@ -11,7 +11,7 @@ Livrer dans cet ordre, un commit par étape, chacune vérifiée avant la suivant
 
 - **A.** Multi-démarches (socle).
 - **B.** Fiche de paramétrage, avec propositions automatiques.
-- **C.** Enveloppes et suivi financier (C1, puis C2 et C3).
+- **C.** Enveloppes et suivi financier (C1, C2a, C2b, C3).
 - **D.** Indicateur « en attente de réponse » (petit, sans stockage).
 
 La boîte de réception transverse de l'agent est **hors périmètre** (voir § 6).
@@ -29,6 +29,16 @@ Avant de coder, vérifier par introspection et signaler les écarts :
    (et équivalents en annotation), et le champ `value` des champs correspondants.
 4. Avant l'étape B : types des listes déroulantes et de leurs options, types des annotations
    texte, présence de `dateDepot` sur `Dossier`.
+5. Avant C2b (vérifié le 19/10/2026) : `dossierModifierAnnotations(input: { dossierId, instructeurId,
+   annotations: [AnnotationInput!]! })` ; `AnnotationInput = { id: ID!, value: AnnotationValueInput! }`,
+   où `id` est l'identifiant du **champ du dossier** (pas du descripteur). `AnnotationValueInput` a
+   une clé par type (`text`, `textarea`, `integerNumber: Int`, `decimalNumber: Float`,
+   `dropDownList: String`…) et `repetition: Int`, qui **ajoute** des lignes à un bloc répétable.
+   Aucune clé ne supprime une ligne. Le retour donne
+   `annotations` et `errors { message }`. Reste à vérifier sur un dossier de test, au début du
+   codage : qu'un sous-champ d'une ligne s'écrit avec l'`id` de son champ dans la ligne, et que
+   `repetition: 1` ajoute exactement une ligne vide. Ces deux vérifications se font au début de C2b,
+   avec le réglage `annotations` activé sur la 154701 uniquement.
 
 ---
 
@@ -87,6 +97,10 @@ En-tête du kanban : sélecteur de démarche (liste déroulante accessible), lie
 `mutations` (faux par défaut) dans sa fiche : une démarche nouvellement ajoutée est en lecture seule
 tant que l'agent ne l'a pas autorisée explicitement.
 
+La saisie du bloc de décision (§ C, « Saisie de la décision ») a son propre réglage, `annotations`
+(faux par défaut), qui s'ajoute lui aussi à `DN_ENABLE_MUTATIONS`. Les deux réglages sont
+indépendants.
+
 ---
 
 ## B. Fiche de paramétrage
@@ -101,6 +115,7 @@ tant que l'agent ne l'a pas autorisée explicitement.
   "numero": 103080,
   "libelle": "Libellé court affiché dans le back office",
   "mutations": false,
+  "annotations": false,
   "delaiCibleJours": 45,
   "champs": {
     "objet":          { "id": "<descripteur>", "libelle": "Intitulé du projet" },
@@ -117,20 +132,22 @@ tant que l'agent ne l'a pas autorisée explicitement.
       "annee":     null,
       "financeursPublics": ["État", "Région", "Département", "Intercommunalité", "Union européenne", "Autre financeur public"]
     },
-    "programmeSouhaite": { "id": "<descripteur>", "libelle": "Programme de l'État souhaité" },
+    "programmeSouhaite": { "id": "<descripteur>", "libelle": "Programme souhaité" },
     "tauxMaxAidesPubliques": 80,
     "motifRepartition": { "id": "<annotation>", "libelle": "Motif de répartition" },
-    "lignes": [
-      {
-        "programme":      { "source": "fixe", "valeur": "DETR" },
-        "financeurs":     ["État"],
-        "montantDemande": null,
-        "assiette":       { "id": "<annotation>", "libelle": "Assiette DETR" },
-        "montantAccorde": { "id": "<annotation>", "libelle": "Montant accordé DETR" },
-        "taux":           null,
-        "numeroEJ":       { "id": "<annotation>", "libelle": "N° d'EJ DETR" }
-      }
-    ]
+    "blocDecision": {
+      "bloc":     { "id": "<annotation>", "libelle": "Financement" },
+      "regime":   { "id": "<sous-champ>", "libelle": "Régime d'aide" },
+      "montant":  { "id": "<sous-champ>", "libelle": "Montant de l'aide" },
+      "statut":   { "id": "<sous-champ>", "libelle": "Statut" },
+      "assiette": { "id": "<sous-champ>", "libelle": "Assiette" },
+      "referenceEngagement": { "id": "<sous-champ>", "libelle": "Référence d'engagement" },
+      "statuts":  { "Demandé": "demande", "proposé": "propose", "accordé": "accorde" }
+    },
+    "regimes": {
+      "Aide d'urgence": { "financeurs": ["État"], "systemeEngagement": "Chorus" },
+      "Appel à projets aide aux investissements": { "financeurs": ["État"], "systemeEngagement": null }
+    }
   },
   "valideLe": "2026-10-18T19:30:00+02:00"
 }
@@ -146,47 +163,63 @@ tant que l'agent ne l'a pas autorisée explicitement.
 ### Vocabulaire financier
 
 La fiche fait correspondre des champs DN à des **rôles génériques**, sans rien de propre à un
-dispositif (DETR, DSIL…). Tous facultatifs. Le millésime vaut pour la démarche ; les autres rôles
-sont regroupés en **lignes de financement**. Une seule ligne dans le cas courant ; plusieurs quand
-un dossier peut être financé par plusieurs programmes (double dotation), chacun avec ses annotations.
+dispositif (DETR, DSIL…). Tous facultatifs. La décision est portée par un **bloc de décision** : un
+bloc répétable d'annotations privées, dont chaque ligne est une **ligne de financement** (un régime
+d'aide, son montant, son statut). Une seule ligne dans le cas courant ; plusieurs quand un dossier
+est financé par plusieurs régimes (double dotation). L'instructeur ajoute les lignes dans DN, ou
+depuis le back office (§ C, « Saisie de la décision »).
 
 | Rôle | Niveau | Types acceptés | Remarque |
 |---|---|---|---|
 | Millésime | démarche | champ ou annotation nombre entier, ou liste dont toutes les options sont des années ; sinon année de dépôt | `{source: "champ", ref}` ou `{source: "anneeDepot"}` |
 | **Coût total** | démarche | champ nombre du formulaire, hors bloc | base de la part du coût total et des taux d'aide publique |
 | **Plan de financement** | démarche | bloc répétable du formulaire ; sous-champs financeur (liste), montant (nombre), statut (liste, facultatif), année (facultatif) | l'agent coche aussi les **financeurs publics** parmi les options du sous-champ financeur |
-| **Programme souhaité** | démarche | liste déroulante du formulaire, facultative | répartit un montant entre lignes qui ont le même financeur |
+| **Programme souhaité** | démarche | liste déroulante du formulaire, hors bloc (une valeur par dossier), facultative | départage les régimes d'un même financeur ; ses options doivent correspondre à celles du régime d'aide |
 | **Taux maximal des aides publiques** | démarche | nombre en %, saisi dans la fiche, facultatif | plafond du cumul des aides publiques (§ C, anomalies non bloquantes) |
 | Motif de répartition | démarche | annotation texte, facultative | affiché dans l'onglet Demande de la fiche dossier |
-| Programme | ligne | liste déroulante (formulaire ou annotation), ou valeur fixe | `{source: "champ", ref}`, `{source: "fixe", valeur}` ou `null` |
-| **Financeurs** | ligne | valeurs choisies parmi les options du sous-champ financeur | ex. `["État"]` |
-| Montant demandé | ligne | champ nombre du formulaire, **ou** calcul par le plan de financement | voir ci-dessous |
-| Assiette éligible | ligne | nombre, formulaire ou annotation | — |
-| **Montant accordé** | ligne | **annotation privée nombre uniquement** | base du calcul de l'enveloppe |
-| Taux | ligne | annotation nombre ; sinon calculé (accordé ÷ assiette) | affiché, jamais additionné |
-| N° d'engagement juridique | ligne | annotation privée texte, ou champ « engagement juridique » de DN | indicateur « engagé », futur rapprochement Chorus |
+| **Bloc de décision** | démarche | bloc répétable d'**annotations privées** | une ligne du bloc = une ligne de financement |
+| ↳ Régime d'aide | sous-champ | liste déroulante | **c'est le programme** de la ligne ; ses options forment la liste fermée des programmes d'enveloppe |
+| ↳ Montant | sous-champ | nombre (entier ou décimal) | **montant accordé** de la ligne, base du calcul de l'enveloppe ; seule source du montant accordé |
+| ↳ Statut | sous-champ | liste déroulante | chaque option est rapprochée d'une valeur générique : *demandé*, *proposé*, *accordé* (`statuts`) |
+| ↳ Assiette | sous-champ | nombre, facultatif | taux de la ligne = montant ÷ assiette, affiché, jamais additionné |
+| ↳ Référence d'engagement | sous-champ | texte, facultatif ; valeur libre | indicateur « engagé » ; futur rapprochement, par système |
+| **Table des régimes** | démarche | pour chaque option du régime : **financeurs** (une ou plusieurs options du sous-champ financeur du plan) et **système d'engagement** (texte libre, facultatif : Chorus, Osiris, logiciel de la collectivité…) | les financeurs rattachent le montant demandé du plan à un régime ; le système d'engagement est seulement affiché pour l'instant, il servira au rapprochement, plus tard et système par système |
 
-Un champ d'un bloc répétable peut être désigné pour les rôles numériques du formulaire : sa valeur est
-la somme des lignes renseignées.
+Le type « engagement juridique » natif de DN n'est pas utilisé.
 
-**Montant demandé d'une ligne**, trois sources exclusives :
+Côté usager, le plan de financement reste au niveau du **financeur** (« État ») : l'usager ne connaît
+pas les régimes. Le bloc de décision n'a pas de sous-champ financeur : c'est la table des régimes
+qui fait foi.
 
-1. un plan de financement est désigné et la ligne a des financeurs : somme des lignes du plan dont
-   le financeur fait partie des financeurs de la ligne ;
-2. sinon, le champ `montantDemande` de la ligne ;
-3. sinon, s'il n'y a qu'une ligne, le montant demandé des cartes.
+**Comparaison des libellés** (régime, programme souhaité, financeur, options de statut) : toujours
+après normalisation de la casse, des accents, des espaces (début, fin, espaces multiples et
+insécables) et des apostrophes (`'`, `‘`, `’`). « Aide d’urgence » et « aide d'urgence » sont égaux ;
+« Aide urgence » ne l'est pas.
 
-Une ligne qui désigne à la fois des financeurs et un champ `montantDemande` est refusée (422).
+Un champ d'un bloc répétable du formulaire peut être désigné pour les rôles numériques du formulaire
+(coût total, montant des cartes) : sa valeur est la somme des lignes renseignées.
 
-**Financeur partagé** par plusieurs lignes (DETR et DSIL pour « État ») : le montant d'une ligne du
-plan va à la ligne de financement dont le programme est égal au programme souhaité du dossier ; à
-défaut (pas de programme souhaité, ou valeur sans ligne correspondante), il est compté comme
-**« demandé non affecté »**.
+**Lignes de financement d'un dossier** : une par régime présent dans le bloc de décision ; plus une
+ligne au statut *demandé* pour chaque régime qui reçoit un montant demandé du plan sans figurer encore
+dans le bloc. Une ligne du bloc sans régime est ignorée, sauf si un montant ou un statut y est saisi
+(anomalie « ligne sans régime »). Deux lignes du bloc avec le même régime : anomalie « régime en
+double » qui désigne les deux lignes (« lignes 1 et 3 »), rien n'est compté pour ce régime.
 
-**Montant demandé des cartes** : quand un plan de financement est désigné, la carte affiche la somme
-des lignes du plan dont le financeur relève d'au moins une ligne de financement (« demandé sur nos
-programmes »). `champs.montantDemande` ne peut alors plus désigner le sous-champ montant du plan,
-qui additionnerait tous les financeurs.
+**Montant demandé d'un régime** :
+
+1. avec un plan de financement : chaque ligne du plan va au régime que la correspondance associe à
+   son financeur ; s'il y en a plusieurs, au régime égal au programme souhaité du dossier ; à défaut,
+   il est compté comme **« demandé non affecté »** ;
+2. sans plan : le montant demandé des cartes va au programme souhaité, ou au seul régime du bloc ;
+   à défaut, demandé non affecté.
+
+**Montant demandé des cartes** : avec un plan, somme des lignes du plan dont le financeur figure dans
+la table des régimes (« demandé sur nos régimes »). `champs.montantDemande` ne peut alors plus désigner
+le sous-champ montant du plan, qui additionnerait tous les financeurs.
+
+L'ancien réglage `lignes` (une annotation par rôle et par programme) est abandonné sans migration :
+aucune fiche enregistrée ne l'utilise. Une fiche qui en contiendrait encore est lue sans lui, et la
+fiche de paramétrage le signale.
 
 Le **périmètre** (département, commune) est hors de ce chantier (§ C, « Plus tard »).
 
@@ -206,20 +239,22 @@ pré-sélectionne, **avec la raison affichée** à côté de chaque proposition 
 |---|---|---|
 | Objet | champs texte du formulaire | libellé contenant « objet », « intitulé », « projet », « titre » ; sinon le premier champ texte |
 | Montant demandé | champs nombre du formulaire | « montant », « demandé », « subvention », « € » ; seul champ nombre |
-| Montant accordé | annotations nombre | « accordé », « attribué », « montant » ; seule annotation nombre |
-| Assiette | champs ou annotations nombre | « coût », « assiette », « éligible », « total », « HT » |
-| Taux | annotations nombre | « taux », « % » ; sinon « calculé » |
-| Programme | listes déroulantes | « dotation », « programme », « dispositif », « fonds » |
 | Millésime | champs ou annotations entier ou liste | « année », « millésime », « exercice » ; sinon année de dépôt |
-| N° d'EJ | annotations texte, champs « engagement juridique » | « engagement », « EJ », « Chorus » |
 | Coût total | nombres du formulaire hors bloc | « coût », « total », « HT » |
 | Plan de financement | blocs répétables contenant au moins une liste et un nombre | « financement », « financeur », « plan » ; seul bloc qui convient |
 | Sous-champs du plan | listes et nombres du bloc | financeur : « financeur », sinon première liste ; montant : « montant », sinon premier nombre ; statut : « statut », « état » ; année : « année », « exercice » |
 | Financeurs publics | options du sous-champ financeur | État, Région, Département, Intercommunalité, Union européenne, Autre financeur public (options qui portent ces libellés) |
-| Programme souhaité | listes du formulaire | « programme », « souhaité », « dotation » |
+| Programme souhaité | listes du formulaire, hors bloc | « programme », « régime », « souhaité », « dotation » |
 | Motif de répartition | annotations texte | « motif », « répartition » |
-| Financeurs d'une ligne | options du sous-champ financeur | l'option contenant « État » ; sinon à choisir |
-| Lignes | — | une ligne par annotation « montant accordé » proposée ; s'il y en a plusieurs, le programme de chaque ligne est à renseigner par l'agent |
+| Bloc de décision | blocs d'annotations contenant au moins une liste et un nombre | « financement », « décision », « aide » ; seul bloc qui convient |
+| ↳ Régime | listes du bloc | « régime », « programme », « dispositif » ; sinon la liste qui n'est pas le statut |
+| ↳ Montant | nombres du bloc | « montant », « aide », « accordé » |
+| ↳ Statut | listes du bloc | « statut », « état », « décision » |
+| ↳ Assiette | nombres du bloc | « assiette », « éligible » |
+| ↳ Référence d'engagement | textes du bloc | « engagement », « référence », « EJ », « Chorus » |
+| Valeurs de statut | options du statut | « demand » → demandé ; « propos » → proposé ; « accord », « attribu » → accordé ; sinon à choisir |
+| Régime → financeurs | options du financeur du plan | une option qui figure dans le libellé du régime ; sinon l'option « État » ; sinon à choisir |
+| Système d'engagement | — | aucune proposition (vide) |
 
 L'agent valide ou corrige chaque proposition. **Rien n'est enregistré sans le bouton « Enregistrer
 le paramétrage »**, qui affiche ensuite la date de validation.
@@ -233,15 +268,17 @@ Sections, de haut en bas :
 2. **Affichage des cartes** : listes déroulantes Objet et Montant demandé ; délai cible (jours).
 3. **Données financières** : millésime (avec sa source) ; coût total ; plan de financement (bloc,
    sous-champs, cases « financeurs publics ») ; programme souhaité ; taux maximal des aides
-   publiques ; motif de répartition ; une ou plusieurs lignes de financement, chacune avec ses
-   cases « financeurs » (« Ajouter une ligne », « Retirer ») ; chaque liste ne propose que les types
-   acceptés pour son rôle.
-   - S'il n'y a aucune annotation privée nombre : message « Aucune annotation privée de type nombre
-     dans cette démarche. Ajoutez-en une dans l'éditeur de la démarche sur DN (ex. « Montant
-     accordé »), puis actualisez », avec lien vers DN.
+   publiques ; motif de répartition ; **bloc de décision** et ses sous-champs ; tableau **valeurs de
+   statut** (une liste par option) ; **table des régimes** (par régime : cases des financeurs et
+   système d'engagement). Chaque
+   liste ne propose que les types acceptés pour son rôle.
+   - S'il n'y a aucun bloc répétable d'annotations : message « Aucun bloc répétable dans les
+     annotations privées. Créez-en un dans l'éditeur de la démarche sur DN (régime d'aide, montant,
+     statut), puis actualisez », avec lien vers DN.
    - En lecture : enveloppes alimentées par la démarche, avec lien (elles se créent ailleurs, § C).
-4. **Changements d'état** : case « Autoriser les changements d'état sur cette démarche » (avec rappel
-   que `DN_ENABLE_MUTATIONS` doit aussi être actif).
+4. **Changements d'état et saisie** : case « Autoriser les changements d'état sur cette démarche » ;
+   case « Autoriser la saisie du bloc de décision depuis le back office » ; rappel que
+   `DN_ENABLE_MUTATIONS` doit aussi être actif.
 
 Chaque liste montre le libellé DN exact du champ, son type et sa position dans le formulaire, pour
 éviter les confusions entre champs homonymes.
@@ -274,9 +311,9 @@ privées de DN, ce qui permet à tout outil de recalculer la consommation.
 }
 ```
 
-- `programme` : facultatif (`null` = tous programmes). Il se choisit dans une **liste fermée**, pas
-  en texte libre : valeurs fixes des lignes et options des listes déroulantes « programme » des
-  démarches rattachées. Une valeur qui a disparu de cette liste est signalée en anomalie.
+- `programme` : facultatif (`null` = tous régimes). Il se choisit dans une **liste fermée**, pas
+  en texte libre : les options du sous-champ « régime d'aide » du bloc de décision des démarches
+  rattachées. Une valeur qui a disparu de cette liste est signalée en anomalie.
 - `parent` (délégation) : facultatif ; sert seulement au contrôle « somme des enveloppes filles ≤
   enveloppe mère », sans effet sur les calculs.
 - `demarches` : uniquement des démarches déclarées.
@@ -285,8 +322,8 @@ privées de DN, ce qui permet à tout outil de recalculer la consommation.
 
 Pour chaque dossier d'une démarche qui alimente au moins une enveloppe, et pour chaque ligne de
 financement : les enveloppes candidates sont celles dont `demarches` contient la démarche, dont
-`millesime` égale le millésime du dossier, et dont `programme` est `null` ou égal à la valeur du
-programme de la ligne.
+`millesime` égale le millésime du dossier, et dont `programme` est `null` ou égal au régime de la
+ligne.
 
 | Candidates | Résultat |
 |---|---|
@@ -299,23 +336,27 @@ suivie (pas d'anomalie).
 
 ### Statut financier, par imputation
 
-DN n'a qu'un état par dossier ; le statut financier se porte donc **par ligne imputée** :
+DN n'a qu'un état par dossier ; le statut financier se porte donc **par ligne imputée**. **L'état DN
+prime, le statut de la ligne le précise ; un désaccord est toujours une anomalie, jamais une
+correction silencieuse.** Un statut vide sans montant vaut *demandé*.
 
-| État DN | Montant accordé | Statut |
+| État DN | Statut de la ligne | Statut financier |
 |---|---|---|
-| en construction | vide | **demandé** |
-| en construction | renseigné | **demandé**, avec l'anomalie « montant accordé avant instruction » |
-| en instruction | vide | **demandé** |
-| en instruction | renseigné | **programmé** |
-| accepté | > 0 | **accepté** (et **engagé** si le n° d'EJ est renseigné) |
-| accepté | 0 ou vide | plusieurs lignes : « non retenu sur ce programme » si une autre ligne est > 0, sinon anomalie ; une seule ligne : anomalie |
-| refusé, classé sans suite | — | hors calcul |
+| en construction | demandé | **demandé** |
+| en construction | proposé ou accordé | **demandé**, anomalie « décision saisie avant instruction » |
+| en instruction | demandé | **demandé** |
+| en instruction | proposé | **programmé** |
+| en instruction | accordé | **programmé**, repère « décidé, à notifier » |
+| accepté | accordé, montant > 0 | **accepté** (et **engagé** si la référence d'engagement est renseignée) |
+| — | accordé, montant à 0 | **non retenu** sur ce régime |
+| accepté | demandé ou proposé | anomalie, la ligne n'est pas comptée |
+| refusé, classé sans suite | — | hors calcul ; anomalie si une ligne est « accordé » avec un montant > 0 |
 
 ### Indicateurs par enveloppe (serveur, à chaque synchronisation)
 
 - **Montant** (saisi) · **Demandé** (montant demandé des lignes « demandé » ou « programmé ») ·
   **Programmé** (montant accordé des lignes « programmé ») · **Accepté** · **Engagé** (part de
-  l'accepté avec n° d'EJ) · **Reste** = montant − accepté · **Reste prévisionnel** = reste − programmé.
+  l'accepté qui porte une référence d'engagement) · **Reste** = montant − accepté · **Reste prévisionnel** = reste − programmé.
 - **Demandé non affecté** : montant d'un financeur partagé que le programme souhaité n'a pas permis
   d'affecter (§ B). Il est compté une fois dans chaque enveloppe où une ligne qui partage ce
   financeur est imputée, n'entre ni dans « Demandé » ni dans le reste, et renvoie à la liste des
@@ -328,15 +369,20 @@ DN n'a qu'un état par dossier ; le statut financier se porte donc **par ligne i
 **Anomalies**, listées avec n° de dossier cliquable, jamais ignorées en silence :
 
 - hors enveloppe ; plusieurs enveloppes possibles ;
-- montant accordé avant instruction (dossier en construction) ;
-- accepté sans montant accordé, ou à 0 € (selon la table ci-dessus) ;
+- décision saisie avant instruction ; ligne « accordé » d'un dossier refusé ou classé sans suite ;
+- dossier accepté dont une ligne est « demandé » ou « proposé » ; dossier accepté sans aucune ligne
+  retenue (aucune ligne, ou toutes à 0 €) ;
+- ligne « accordé » sans montant ; montant saisi sans statut ; option de statut sans valeur
+  générique dans la fiche ;
+- ligne sans régime ; régime en double ; régime sans correspondance vers un financeur (son montant
+  demandé ne peut pas être rattaché) ;
 - valeur non numérique ou négative ; millésime illisible ;
 - champ référencé introuvable dans la révision publiée ; programme d'enveloppe absent de la liste fermée ;
 - enveloppes filles dont le total dépasse la mère.
 
 **Anomalies non bloquantes** (signalées, rien n'est retiré du calcul) :
 
-- montant accordé supérieur au montant demandé, ou supérieur à l'assiette ;
+- montant accordé supérieur au montant demandé du régime, ou supérieur à l'assiette ;
 - taux d'aide publique supérieur au taux maximal des aides publiques : le **taux après décision**
   s'il existe, sinon le taux cumulé prévisionnel ; sans plan de financement, le taux de chaque ligne ;
 - somme du plan de financement différente du coût total (tolérance 1 €).
@@ -349,17 +395,66 @@ quel que soit leur statut :
 - **cumulé prévisionnel** = financeurs publics du plan ÷ coût total ;
 - **dont aides obtenues** = financeurs publics au statut « obtenue » ÷ coût total (si le sous-champ
   statut est désigné) ;
-- **après décision** = (aides publiques des financeurs qui ne relèvent d'aucune ligne de financement
-  + pour chaque ligne, son montant accordé s'il est renseigné, sinon son montant demandé) ÷ coût
-  total. Il n'existe que si au moins un montant accordé est renseigné ; c'est alors lui qui déclenche
-  l'anomalie de plafond.
+- **après décision** = (aides publiques des financeurs qui ne relèvent d'aucun régime
+  + pour chaque régime, son montant s'il est renseigné dans le bloc de décision, sinon son montant
+  demandé) ÷ coût total. Il n'existe que si au moins un montant est renseigné dans le bloc ; c'est
+  alors lui qui déclenche l'anomalie de plafond.
 
 ### Fiche dossier, onglet Demande
 
 Quand un plan de financement est désigné : tableau du plan (financeur, montant, statut, part du coût
 total), financeurs publics repérés ; dessous, total des aides publiques, coût total et les trois taux ;
-les anomalies non bloquantes en `--warn`. Sous les lignes de financement, le **motif de
-répartition** s'il est renseigné.
+les anomalies non bloquantes en `--warn`. Sous les lignes de financement (régime, statut DN et
+financier, demandé, montant, assiette, taux, référence d'engagement et système d'engagement du
+régime), le **motif de répartition** s'il est renseigné.
+
+### Saisie de la décision (C2b, mutation `dossierModifierAnnotations`)
+
+Autorisée par l'utilisateur le 19/10/2026, **pour le seul bloc de décision** : modifier le régime,
+le montant, le statut, l'assiette et la référence d'engagement d'une ligne, et ajouter une ligne au bloc. Aucune
+autre annotation, aucun champ du formulaire.
+
+Garde-fous :
+
+1. **Deux interrupteurs** : `DN_ENABLE_MUTATIONS=1` et le réglage `annotations` de la démarche (faux
+   par défaut). Sans l'un des deux, la route répond 403 et la fiche n'affiche pas les commandes de
+   saisie.
+2. **Seuls les champs reliés à un rôle** sont modifiables : le serveur vérifie que chaque champ
+   envoyé appartient au dossier, à une ligne du bloc de décision désigné, et que son descripteur est
+   l'un des sous-champs désignés (régime, montant, statut, assiette, référence d'engagement). Il
+   refuse tout autre identifiant (422).
+3. **Valeurs validées** contre la révision publiée : option existante pour une liste ; nombre ≥ 0,
+   entier pour un champ nombre entier (et au plus 2 147 483 647, limite du type `Int` de l'API) ;
+   référence d'engagement en texte libre, d'au plus 200 caractères.
+4. **Relecture avant écriture** : le front envoie, pour chaque champ, l'ancienne valeur qu'il a
+   affichée et la nouvelle. Le serveur relit le dossier dans DN juste avant d'écrire ; si une seule
+   ancienne valeur ne correspond plus, **rien n'est écrit** (409, « valeur modifiée dans DN entre-temps,
+   rechargez le dossier »). L'API n'ayant pas d'écriture conditionnelle, il reste un intervalle de
+   quelques centaines de millisecondes entre relecture et écriture : c'est accepté et documenté.
+5. **Confirmation** : la fenêtre liste chaque modification, **ancienne valeur → nouvelle valeur**,
+   avec le libellé DN du champ et le régime de la ligne. Rien n'est envoyé sans le bouton
+   « Enregistrer dans DN ».
+6. **Dossier accepté** (et aussi refusé ou classé sans suite) : avertissement en `--warn` dans la
+   confirmation (« Ce dossier est accepté : la décision a été notifiée à l'usager. Modifier le
+   montant change l'accepté de l'enveloppe, sans nouvelle notification »), sans bloquer.
+7. **Journal** : une ligne JSON par tentative dans `logs/annotations.log` (ignoré par git) : date,
+   démarche, dossier, sous-champ (rôle, descripteur), ancienne et nouvelle valeur, ajout de ligne,
+   résultat. Ni le jeton, ni aucune autre donnée du dossier.
+8. **Pas de mise à jour optimiste** : après succès, la fiche et le kanban sont relus depuis DN.
+
+**Ajout d'une ligne** : en deux temps, `repetition: 1` sur le bloc, relecture du dossier pour obtenir
+les champs de la nouvelle ligne, puis écriture de ses valeurs. Si la seconde écriture échoue, la ligne
+vide reste dans DN (elle est ignorée par le calcul) et le message le dit. **Supprimer une ligne** n'est
+pas possible par l'API : la fiche renvoie vers DN.
+
+Interface : dans l'onglet Demande, sous les lignes de financement, bouton « Modifier la décision »
+(seulement si les deux interrupteurs sont actifs). Il rend chaque ligne modifiable (liste du régime,
+liste du statut, montants, référence d'engagement), avec « Ajouter une ligne » ; « Vérifier les modifications » ouvre
+la confirmation.
+
+Adresse serveur : `POST /api/demarches/:numero/dossiers/:n/decision`, corps
+`{ modifications: [{ champId, role, avant, apres }], nouvelleLigne: { regime, montant, statut,
+assiette, referenceEngagement } | null }`.
 
 ### Adresses
 
@@ -372,7 +467,7 @@ répartition** s'il est renseigné.
 |---|---|
 | `/api/enveloppes` | GET (avec indicateurs), POST |
 | `/api/enveloppes/:id` | GET, PUT, DELETE |
-| `/api/enveloppes/programmes?demarches=…` | GET : liste fermée des programmes possibles (C2) |
+| `/api/enveloppes/programmes?demarches=…` | GET : liste fermée des programmes possibles (C2a) |
 
 ### Affichage
 
@@ -382,7 +477,8 @@ répartition** s'il est renseigné.
   explicite. Anomalies : badge `--warn` avec leur nombre et lien vers la liste. Équivalent textuel
   accessible (pas de couleur seule).
 - **Accueil** : jauge réduite sur la carte de chaque démarche ; lien « Enveloppes » dans l'en-tête.
-- **Cartes du kanban** : montant accordé, par ligne s'il y en a plusieurs (« DETR 40 000 € · DSIL 0 € »).
+- **Cartes du kanban** : montant accordé, par régime s'il y en a plusieurs (« DETR 40 000 € · DSIL 0 € ») ;
+  repère « Décidé, à notifier » (`--admin`) ; le bandeau en donne le nombre.
 - **Confirmation « Accepter »** : montant accordé par ligne et reste de chaque enveloppe après
   acceptation ; si aucun montant n'est renseigné, avertir (« le montant accordé n'est pas renseigné :
   ce dossier ne sera pas imputé »), sans bloquer.
@@ -393,9 +489,14 @@ répartition** s'il est renseigné.
   indicateurs, bandeau, anomalies ; coût total, plan de financement, programme souhaité,
   affectation par financeurs, demandé non affecté, taux d'aide publique, onglet Demande. Les
   lignes multiples, déjà dans la fiche depuis B, sont imputées sur des enveloppes sans programme.
-- **C2** : imputation sur des enveloppes à programme (liste fermée) ; le sous-champ « Année » du
-  plan de financement, s'il est désigné, donne le millésime de chaque ligne du plan pour
-  l'imputation. Prérequis : annotations des lignes créées par l'utilisateur sur la 154701.
+- **C2a** (lecture seule) : bloc de décision (remplace les lignes de C1), table des régimes
+  (financeurs, système d'engagement), table des statuts ci-dessus, repère « décidé, à notifier » ;
+  programme d'enveloppe choisi parmi les régimes (liste fermée) et imputation par régime.
+  Sous-champs « Assiette » et « Référence d'engagement » facultatifs.
+- **C2b** : saisie de la décision depuis le back office. Commence par les deux vérifications du
+  § 0.5, sur un dossier de test, avec `annotations` activé sur la 154701 uniquement.
+- **C4** (après C3, si besoin) : le sous-champ « Année » du plan de financement, s'il est
+  désigné, donne le millésime de chaque ligne du plan pour l'imputation.
 - **C3** (après C1) : encadré **« Aides déjà accordées à ce SIRET »** dans la fiche dossier :
   dossiers acceptés du même SIRET dans toutes les démarches déclarées, sur les trois dernières
   années, avec leurs montants accordés.
@@ -404,9 +505,9 @@ Validation de l'utilisateur entre chaque livraison.
 
 ### Plus tard (hors chantier)
 
-Périmètre (département ou commune issus de l'adresse ou du SIRET) ; « payé » et rapprochement Chorus
-par n° d'EJ ; simulations ; écriture des montants dans DN (nouvelle mutation : accord explicite
-de l'utilisateur).
+Périmètre (département ou commune issus de l'adresse ou du SIRET) ; « payé » et rapprochement par
+référence d'engagement, système par système (Chorus, Osiris…) ; simulations ; écriture d'autres annotations (nouvel accord explicite de
+l'utilisateur).
 
 ---
 
@@ -440,9 +541,8 @@ garder la récupération des messages isolée dans une fonction réutilisable pa
   non déclaré renvoie 404 sur toutes les routes ; un dossier d'une démarche A ne s'ouvre pas sous
   l'adresse de la démarche B ; aucune mutation possible sur une démarche dont `mutations` est faux.
 - **B** : à l'ajout d'une démarche, la fiche s'ouvre pré-remplie avec les raisons des propositions ;
-  rien n'est écrit avant validation ; « Montant accordé » ne propose que des annotations privées
-  numériques ; plusieurs lignes de financement peuvent être enregistrées ; la source du millésime
-  est affichée.
+  rien n'est écrit avant validation ; le bloc de décision ne propose que des blocs d'annotations
+  privées ; la source du millésime est affichée.
 - **C1** : les totaux du bandeau sont égaux à la somme faite à la main ; un dossier accepté sans
   montant, un dossier hors enveloppe et un montant accordé avant instruction apparaissent en
   anomalie ; une enveloppe alimentée par deux démarches additionne les deux.
@@ -450,9 +550,16 @@ garder la récupération des messages isolée dans une fonction réutilisable pa
   une ligne `["État"]` a 30 000 € demandés ; le taux cumulé prévisionnel vaut 83,3 % et déclenche
   l'anomalie face à un plafond de 80 % ; l'écart de 10 000 € avec le coût total est signalé ; le
   demandé non affecté d'un même dossier n'est jamais compté deux fois dans un total.
-- **C2** : sur un dossier à deux lignes, l'une accordée et l'autre à 0 €, seule la première est
-  comptée, sur sa propre enveloppe ; le programme d'une enveloppe ne se choisit que dans la liste
-  fermée.
+- **C2a** : un dossier en instruction avec « Aide d'urgence, accordé, 2 000 € » dans le bloc est
+  compté en programmé, avec le repère « décidé, à notifier » ; accepté, il est compté en accepté ;
+  refusé avec cette ligne, il apparaît en anomalie ; en construction avec « proposé », anomalie
+  « décision saisie avant instruction ». Sur un dossier à deux régimes, l'un accordé et l'autre à
+  0 €, seul le premier est compté, sur sa propre enveloppe ; le programme d'une enveloppe ne se
+  choisit que parmi les régimes.
+- **C2b** : sans le réglage `annotations`, aucune commande de saisie et la route répond 403 ;
+  un identifiant de champ hors du bloc de décision est refusé ; une valeur modifiée dans DN après
+  l'ouverture de la fiche fait échouer l'enregistrement (409) sans rien écrire ; le journal contient
+  ancienne et nouvelle valeur, sans le jeton ; un dossier accepté affiche l'avertissement.
 - **C3** : un SIRET avec un dossier accepté sur une autre démarche déclarée l'affiche avec son
   montant accordé.
 - **D** : un message de l'usager sans réponse fait apparaître l'indicateur ; une réponse de
