@@ -11,7 +11,7 @@ Livrer dans cet ordre, un commit par étape, chacune vérifiée avant la suivant
 
 - **A.** Multi-démarches (socle).
 - **B.** Fiche de paramétrage, avec propositions automatiques.
-- **C.** Enveloppes et suivi financier (C1, puis C2).
+- **C.** Enveloppes et suivi financier (C1, puis C2 et C3).
 - **D.** Indicateur « en attente de réponse » (petit, sans stockage).
 
 La boîte de réception transverse de l'agent est **hors périmètre** (voir § 6).
@@ -107,16 +107,28 @@ tant que l'agent ne l'a pas autorisée explicitement.
     "montantDemande": { "id": "<descripteur>", "libelle": "Montant demandé" }
   },
   "finances": {
-    "millesime": { "source": "anneeDepot" },
+    "millesime": { "source": "champ", "ref": { "id": "<annotation>", "libelle": "Millésime" } },
+    "coutTotal": { "id": "<descripteur>", "libelle": "Coût total HT" },
+    "planFinancement": {
+      "bloc":      { "id": "<descripteur>", "libelle": "Plan de financement" },
+      "financeur": { "id": "<sous-champ>", "libelle": "Financeur" },
+      "montant":   { "id": "<sous-champ>", "libelle": "Montant" },
+      "statut":    { "id": "<sous-champ>", "libelle": "Statut" },
+      "annee":     null,
+      "financeursPublics": ["État", "Région", "Département", "Intercommunalité", "Union européenne", "Autre financeur public"]
+    },
+    "programmeSouhaite": { "id": "<descripteur>", "libelle": "Programme de l'État souhaité" },
+    "tauxMaxAidesPubliques": 80,
+    "motifRepartition": { "id": "<annotation>", "libelle": "Motif de répartition" },
     "lignes": [
       {
-        "programme":      { "source": "fixe", "valeur": "DSIL" },
+        "programme":      { "source": "fixe", "valeur": "DETR" },
+        "financeurs":     ["État"],
         "montantDemande": null,
-        "assiette":       { "id": "<descripteur>", "libelle": "Coût total HT" },
-        "montantAccorde": { "id": "<annotation>", "libelle": "Montant accordé DSIL" },
+        "assiette":       { "id": "<annotation>", "libelle": "Assiette DETR" },
+        "montantAccorde": { "id": "<annotation>", "libelle": "Montant accordé DETR" },
         "taux":           null,
-        "tauxMax":        80,
-        "numeroEJ":       { "id": "<annotation>", "libelle": "N° d'engagement juridique" }
+        "numeroEJ":       { "id": "<annotation>", "libelle": "N° d'EJ DETR" }
       }
     ]
   },
@@ -140,14 +152,41 @@ un dossier peut être financé par plusieurs programmes (double dotation), chacu
 
 | Rôle | Niveau | Types acceptés | Remarque |
 |---|---|---|---|
-| Millésime | démarche | champ ou annotation nombre entier ou liste déroulante ; sinon année de dépôt | `{source: "champ", ref}` ou `{source: "anneeDepot"}` |
+| Millésime | démarche | champ ou annotation nombre entier, ou liste dont toutes les options sont des années ; sinon année de dépôt | `{source: "champ", ref}` ou `{source: "anneeDepot"}` |
+| **Coût total** | démarche | champ nombre du formulaire, hors bloc | base de la part du coût total et des taux d'aide publique |
+| **Plan de financement** | démarche | bloc répétable du formulaire ; sous-champs financeur (liste), montant (nombre), statut (liste, facultatif), année (facultatif) | l'agent coche aussi les **financeurs publics** parmi les options du sous-champ financeur |
+| **Programme souhaité** | démarche | liste déroulante du formulaire, facultative | répartit un montant entre lignes qui ont le même financeur |
+| **Taux maximal des aides publiques** | démarche | nombre en %, saisi dans la fiche, facultatif | plafond du cumul des aides publiques (§ C, anomalies non bloquantes) |
+| Motif de répartition | démarche | annotation texte, facultative | affiché dans l'onglet Demande de la fiche dossier |
 | Programme | ligne | liste déroulante (formulaire ou annotation), ou valeur fixe | `{source: "champ", ref}`, `{source: "fixe", valeur}` ou `null` |
-| Montant demandé | ligne | nombre, formulaire | par défaut `champs.montantDemande` s'il n'y a qu'une ligne |
+| **Financeurs** | ligne | valeurs choisies parmi les options du sous-champ financeur | ex. `["État"]` |
+| Montant demandé | ligne | champ nombre du formulaire, **ou** calcul par le plan de financement | voir ci-dessous |
 | Assiette éligible | ligne | nombre, formulaire ou annotation | — |
 | **Montant accordé** | ligne | **annotation privée nombre uniquement** | base du calcul de l'enveloppe |
 | Taux | ligne | annotation nombre ; sinon calculé (accordé ÷ assiette) | affiché, jamais additionné |
-| Taux maximal | ligne | nombre saisi dans la fiche (en %), facultatif | contrôle seulement (§ C, anomalies) |
-| N° d'engagement juridique | ligne | annotation privée texte | indicateur « engagé », futur rapprochement Chorus |
+| N° d'engagement juridique | ligne | annotation privée texte, ou champ « engagement juridique » de DN | indicateur « engagé », futur rapprochement Chorus |
+
+Un champ d'un bloc répétable peut être désigné pour les rôles numériques du formulaire : sa valeur est
+la somme des lignes renseignées.
+
+**Montant demandé d'une ligne**, trois sources exclusives :
+
+1. un plan de financement est désigné et la ligne a des financeurs : somme des lignes du plan dont
+   le financeur fait partie des financeurs de la ligne ;
+2. sinon, le champ `montantDemande` de la ligne ;
+3. sinon, s'il n'y a qu'une ligne, le montant demandé des cartes.
+
+Une ligne qui désigne à la fois des financeurs et un champ `montantDemande` est refusée (422).
+
+**Financeur partagé** par plusieurs lignes (DETR et DSIL pour « État ») : le montant d'une ligne du
+plan va à la ligne de financement dont le programme est égal au programme souhaité du dossier ; à
+défaut (pas de programme souhaité, ou valeur sans ligne correspondante), il est compté comme
+**« demandé non affecté »**.
+
+**Montant demandé des cartes** : quand un plan de financement est désigné, la carte affiche la somme
+des lignes du plan dont le financeur relève d'au moins une ligne de financement (« demandé sur nos
+programmes »). `champs.montantDemande` ne peut alors plus désigner le sous-champ montant du plan,
+qui additionnerait tous les financeurs.
 
 Le **périmètre** (département, commune) est hors de ce chantier (§ C, « Plus tard »).
 
@@ -155,7 +194,8 @@ Le **périmètre** (département, commune) est hors de ce chantier (§ C, « Plu
 
 La fiche affiche la source retenue. Si c'est l'**année de dépôt**, elle le signale (« millésime
 déduit de l'année de dépôt, aucun champ désigné ») et chaque enveloppe compte les dossiers
-concernés (§ C).
+concernés (§ C). Si un champ est désigné mais vide sur un dossier, l'année de dépôt s'applique à ce
+dossier, compté de même en « millésime par défaut ».
 
 ### Propositions automatiques
 
@@ -171,7 +211,14 @@ pré-sélectionne, **avec la raison affichée** à côté de chaque proposition 
 | Taux | annotations nombre | « taux », « % » ; sinon « calculé » |
 | Programme | listes déroulantes | « dotation », « programme », « dispositif », « fonds » |
 | Millésime | champs ou annotations entier ou liste | « année », « millésime », « exercice » ; sinon année de dépôt |
-| N° d'EJ | annotations texte | « engagement », « EJ », « Chorus » |
+| N° d'EJ | annotations texte, champs « engagement juridique » | « engagement », « EJ », « Chorus » |
+| Coût total | nombres du formulaire hors bloc | « coût », « total », « HT » |
+| Plan de financement | blocs répétables contenant au moins une liste et un nombre | « financement », « financeur », « plan » ; seul bloc qui convient |
+| Sous-champs du plan | listes et nombres du bloc | financeur : « financeur », sinon première liste ; montant : « montant », sinon premier nombre ; statut : « statut », « état » ; année : « année », « exercice » |
+| Financeurs publics | options du sous-champ financeur | État, Région, Département, Intercommunalité, Union européenne, Autre financeur public (options qui portent ces libellés) |
+| Programme souhaité | listes du formulaire | « programme », « souhaité », « dotation » |
+| Motif de répartition | annotations texte | « motif », « répartition » |
+| Financeurs d'une ligne | options du sous-champ financeur | l'option contenant « État » ; sinon à choisir |
 | Lignes | — | une ligne par annotation « montant accordé » proposée ; s'il y en a plusieurs, le programme de chaque ligne est à renseigner par l'agent |
 
 L'agent valide ou corrige chaque proposition. **Rien n'est enregistré sans le bouton « Enregistrer
@@ -184,8 +231,11 @@ Sections, de haut en bas :
 1. **Démarche** (lecture) : titre, n°, état, date de publication de la révision, nombre de champs et
    d'annotations. Champ « Libellé court ».
 2. **Affichage des cartes** : listes déroulantes Objet et Montant demandé ; délai cible (jours).
-3. **Données financières** : millésime (avec sa source) ; une ou plusieurs lignes de financement
-   (« Ajouter une ligne », « Retirer ») ; chaque liste ne propose que les types acceptés pour son rôle.
+3. **Données financières** : millésime (avec sa source) ; coût total ; plan de financement (bloc,
+   sous-champs, cases « financeurs publics ») ; programme souhaité ; taux maximal des aides
+   publiques ; motif de répartition ; une ou plusieurs lignes de financement, chacune avec ses
+   cases « financeurs » (« Ajouter une ligne », « Retirer ») ; chaque liste ne propose que les types
+   acceptés pour son rôle.
    - S'il n'y a aucune annotation privée nombre : message « Aucune annotation privée de type nombre
      dans cette démarche. Ajoutez-en une dans l'éditeur de la démarche sur DN (ex. « Montant
      accordé »), puis actualisez », avec lien vers DN.
@@ -266,7 +316,13 @@ DN n'a qu'un état par dossier ; le statut financier se porte donc **par ligne i
 - **Montant** (saisi) · **Demandé** (montant demandé des lignes « demandé » ou « programmé ») ·
   **Programmé** (montant accordé des lignes « programmé ») · **Accepté** · **Engagé** (part de
   l'accepté avec n° d'EJ) · **Reste** = montant − accepté · **Reste prévisionnel** = reste − programmé.
-- **Millésime déduit** : nombre de dossiers imputés dont le millésime vient de l'année de dépôt.
+- **Demandé non affecté** : montant d'un financeur partagé que le programme souhaité n'a pas permis
+  d'affecter (§ B). Il est compté une fois dans chaque enveloppe où une ligne qui partage ce
+  financeur est imputée, n'entre ni dans « Demandé » ni dans le reste, et renvoie à la liste des
+  dossiers concernés. **Il n'est jamais additionné d'une enveloppe à l'autre** (page `/enveloppes`,
+  accueil) : aucun total transverse n'en est fait.
+- **Millésime par défaut** : nombre de dossiers imputés dont le millésime vient de l'année de dépôt
+  (aucun champ désigné, ou champ vide sur le dossier).
 - Calcul en centimes entiers ; affichage `Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" })`.
 
 **Anomalies**, listées avec n° de dossier cliquable, jamais ignorées en silence :
@@ -278,10 +334,32 @@ DN n'a qu'un état par dossier ; le statut financier se porte donc **par ligne i
 - champ référencé introuvable dans la révision publiée ; programme d'enveloppe absent de la liste fermée ;
 - enveloppes filles dont le total dépasse la mère.
 
-**Alertes non bloquantes** (signalées, le montant reste compté) :
+**Anomalies non bloquantes** (signalées, rien n'est retiré du calcul) :
 
 - montant accordé supérieur au montant demandé, ou supérieur à l'assiette ;
-- taux (lu ou calculé) supérieur au taux maximal de la ligne, s'il est défini.
+- taux d'aide publique supérieur au taux maximal des aides publiques : le **taux après décision**
+  s'il existe, sinon le taux cumulé prévisionnel ; sans plan de financement, le taux de chaque ligne ;
+- somme du plan de financement différente du coût total (tolérance 1 €).
+
+### Taux d'aide publique (par dossier, serveur)
+
+Calculés sur le plan de financement, en rapport au coût total ; toutes les lignes du plan comptent,
+quel que soit leur statut :
+
+- **cumulé prévisionnel** = financeurs publics du plan ÷ coût total ;
+- **dont aides obtenues** = financeurs publics au statut « obtenue » ÷ coût total (si le sous-champ
+  statut est désigné) ;
+- **après décision** = (aides publiques des financeurs qui ne relèvent d'aucune ligne de financement
+  + pour chaque ligne, son montant accordé s'il est renseigné, sinon son montant demandé) ÷ coût
+  total. Il n'existe que si au moins un montant accordé est renseigné ; c'est alors lui qui déclenche
+  l'anomalie de plafond.
+
+### Fiche dossier, onglet Demande
+
+Quand un plan de financement est désigné : tableau du plan (financeur, montant, statut, part du coût
+total), financeurs publics repérés ; dessous, total des aides publiques, coût total et les trois taux ;
+les anomalies non bloquantes en `--warn`. Sous les lignes de financement, le **motif de
+répartition** s'il est renseigné.
 
 ### Adresses
 
@@ -294,7 +372,7 @@ DN n'a qu'un état par dossier ; le statut financier se porte donc **par ligne i
 |---|---|
 | `/api/enveloppes` | GET (avec indicateurs), POST |
 | `/api/enveloppes/:id` | GET, PUT, DELETE |
-| `/api/enveloppes/programmes?demarches=…` | GET : liste fermée des programmes possibles |
+| `/api/enveloppes/programmes?demarches=…` | GET : liste fermée des programmes possibles (C2) |
 
 ### Affichage
 
@@ -309,14 +387,20 @@ DN n'a qu'un état par dossier ; le statut financier se porte donc **par ligne i
   acceptation ; si aucun montant n'est renseigné, avertir (« le montant accordé n'est pas renseigné :
   ce dossier ne sera pas imputé »), sans bloquer.
 
-### Livraison en deux temps
+### Livraison
 
-- **C1** : enveloppes, imputation par démarche et millésime (`programme` toujours `null`),
-  indicateurs, bandeau, anomalies.
-- **C2** : imputation par programme et lignes multiples (double dotation). Prérequis : deux
-  annotations « montant accordé » créées par l'utilisateur sur la démarche 154701.
+- **C1** : enveloppes, imputation par démarche et millésime (`programme` toujours `null`) ;
+  indicateurs, bandeau, anomalies ; coût total, plan de financement, programme souhaité,
+  affectation par financeurs, demandé non affecté, taux d'aide publique, onglet Demande. Les
+  lignes multiples, déjà dans la fiche depuis B, sont imputées sur des enveloppes sans programme.
+- **C2** : imputation sur des enveloppes à programme (liste fermée) ; le sous-champ « Année » du
+  plan de financement, s'il est désigné, donne le millésime de chaque ligne du plan pour
+  l'imputation. Prérequis : annotations des lignes créées par l'utilisateur sur la 154701.
+- **C3** (après C1) : encadré **« Aides déjà accordées à ce SIRET »** dans la fiche dossier :
+  dossiers acceptés du même SIRET dans toutes les démarches déclarées, sur les trois dernières
+  années, avec leurs montants accordés.
 
-Validation de l'utilisateur entre C1 et C2.
+Validation de l'utilisateur entre chaque livraison.
 
 ### Plus tard (hors chantier)
 
@@ -362,9 +446,15 @@ garder la récupération des messages isolée dans une fonction réutilisable pa
 - **C1** : les totaux du bandeau sont égaux à la somme faite à la main ; un dossier accepté sans
   montant, un dossier hors enveloppe et un montant accordé avant instruction apparaissent en
   anomalie ; une enveloppe alimentée par deux démarches additionne les deux.
+- **C1, plan de financement** : plan « État 30 000 € » + « Région 20 000 € », coût total 60 000 € :
+  une ligne `["État"]` a 30 000 € demandés ; le taux cumulé prévisionnel vaut 83,3 % et déclenche
+  l'anomalie face à un plafond de 80 % ; l'écart de 10 000 € avec le coût total est signalé ; le
+  demandé non affecté d'un même dossier n'est jamais compté deux fois dans un total.
 - **C2** : sur un dossier à deux lignes, l'une accordée et l'autre à 0 €, seule la première est
   comptée, sur sa propre enveloppe ; le programme d'une enveloppe ne se choisit que dans la liste
   fermée.
+- **C3** : un SIRET avec un dossier accepté sur une autre démarche déclarée l'affiche avec son
+  montant accordé.
 - **D** : un message de l'usager sans réponse fait apparaître l'indicateur ; une réponse de
   l'instructeur le fait disparaître après synchronisation.
 - Toujours : jeton absent du front, de Git et des journaux ; page utilisable à 390 px.
