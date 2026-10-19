@@ -1,0 +1,12 @@
+{
+  "id": "aide-d-urgence",
+  "libelle": "Aide d'urgence",
+  "programme": null,
+  "millesime": 2026,
+  "montantCentimes": 25000000,
+  "parent": null,
+  "demarches": [
+    154701
+  ],
+  "modifieLe": "2026-10-19T12:41:42.043Z"
+}

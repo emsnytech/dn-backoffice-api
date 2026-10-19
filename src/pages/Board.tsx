@@ -200,6 +200,11 @@ export function Board({ numero }: { numero: string }) {
           {env.data.enveloppes.map((e) => <div key={e.id}><Jauge e={e} /></div>)}
         </section>
       )}
+      {env.data && env.data.enveloppes.length === 0 && (
+        <p className="field__hint">
+          Aucune enveloppe n'est alimentée par cette démarche. <Link to={`/enveloppes?nouvelle=${numero}`}>Créer une enveloppe</Link>
+        </p>
+      )}
       {toast && (
         <div className="toast" role="status">
           <span>{toast}</span>

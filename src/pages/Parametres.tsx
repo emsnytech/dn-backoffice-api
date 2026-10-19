@@ -138,13 +138,17 @@ function toForm(c: Config): Form {
 }
 
 // Le serveur ne reçoit que les identifiants ; il vérifie les types et reprend les libellés de DN.
+// Montant des cartes : le sous-champ montant du plan de financement n'est pas permis (il
+// additionnerait tous les financeurs) ; il vaut alors « calculé à partir du plan ».
+const montantCartes = (f: Form) => (f.planBloc && f.montantDemande === f.planMontant ? "" : f.montantDemande);
+
 function toBody(f: Form) {
   const ref = (v: string) => (v ? { id: v } : null);
   return {
     libelle: f.libelle,
     delaiCibleJours: Number(f.delaiCibleJours),
     mutations: f.mutations,
-    champs: { objet: ref(f.objet), montantDemande: ref(f.montantDemande) },
+    champs: { objet: ref(f.objet), montantDemande: ref(montantCartes(f)) },
     finances: {
       millesime: f.millesime ? { source: "champ", ref: { id: f.millesime } } : { source: "anneeDepot" },
       coutTotal: ref(f.coutTotal),
@@ -336,7 +340,7 @@ export function Parametres() {
             <h2 id="s-cartes">2. Affichage des cartes</h2>
             <ChampSelect label="Objet" value={form.objet} onChange={(v) => set({ objet: v })} candidats={p.candidats.objet} aucun="Aucun" known={known}
               propose={proposeRef(p.proposition.champs.objet, p.raisons.objet)} />
-            <ChampSelect label="Montant demandé" value={form.montantDemande} onChange={(v) => set({ montantDemande: v })}
+            <ChampSelect label="Montant demandé" value={montantCartes(form)} onChange={(v) => set({ montantDemande: v })}
               candidats={p.candidats.montantDemande.filter((c) => c.id !== form.planMontant)} aucun={form.planBloc ? "Calculé à partir du plan de financement" : "Aucun"} known={known}
               propose={proposeRef(p.proposition.champs.montantDemande, p.raisons.montantDemande)}
               hint={form.planBloc
@@ -494,7 +498,13 @@ export function Parametres() {
             </button>
 
             <h3>Enveloppes alimentées</h3>
-            <p className="muted">Aucune pour l'instant : les enveloppes se créent à part, avec l'étape C.</p>
+            <p className="field__hint">
+              Une enveloppe (libellé, millésime, montant) se crée à part : elle peut être alimentée par plusieurs démarches.{" "}
+              {declaree
+                ? <Link to={`/enveloppes?nouvelle=${numero}`}>Créer une enveloppe alimentée par cette démarche</Link>
+                : "Enregistrez d'abord cette fiche pour pouvoir créer une enveloppe."}{" "}
+              {declaree && <>· <Link to="/enveloppes">Toutes les enveloppes</Link></>}
+            </p>
           </section>
 
           <section className="settings__section" aria-labelledby="s-mutations">

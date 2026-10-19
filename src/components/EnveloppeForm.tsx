@@ -2,34 +2,50 @@
 // en euros ; le serveur le valide et le stocke en centimes.
 import { useState } from "react";
 
+// Montant saisi à la française : « 50 000 € », « 1.500.000 », « 12 500,50 ». null si illisible.
+export function parseEuros(saisie: string): number | null {
+  let s = saisie.replace(/[\s€]/g, "");
+  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(s)) s = s.replace(/\./g, "");
+  s = s.replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  return Number(s);
+}
+
 type Initial = { libelle: string; millesime: number; montantCentimes: number; demarches: number[]; parent: string | null };
 type Props = {
   id?: string;
   initial?: Initial;
+  // Démarches cochées d'office à la création (lien depuis le kanban ou les paramètres).
+  demarchesInitiales?: number[];
   demarches: { numero: number; libelle: string }[];
   autres: { id: string; libelle: string }[];
   onSaved: (e: { id: string }) => void;
   onCancel?: () => void;
 };
 
-export function EnveloppeForm({ id, initial, demarches, autres, onSaved, onCancel }: Props) {
+export function EnveloppeForm({ id, initial, demarchesInitiales, demarches, autres, onSaved, onCancel }: Props) {
   const [libelle, setLibelle] = useState(initial?.libelle ?? "");
   const [millesime, setMillesime] = useState(String(initial?.millesime ?? new Date().getFullYear()));
   const [montant, setMontant] = useState(initial ? String(initial.montantCentimes / 100) : "");
-  const [choisies, setChoisies] = useState<number[]>(initial?.demarches ?? []);
+  const [choisies, setChoisies] = useState<number[]>(initial?.demarches ?? demarchesInitiales ?? []);
   const [parent, setParent] = useState(initial?.parent ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const euros = parseEuros(montant);
+    if (euros === null) {
+      setError("Montant illisible : saisissez un nombre en euros, par exemple 150 000 ou 150 000,50");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(id ? `/api/enveloppes/${id}` : "/api/enveloppes", {
         method: id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ libelle, millesime: Number(millesime), montant: Number(montant.replace(",", ".").replace(/\s/g, "")), demarches: choisies, parent: parent || null }),
+        body: JSON.stringify({ libelle, millesime: Number(millesime), montant: euros, demarches: choisies, parent: parent || null }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `Erreur ${res.status}`);
@@ -67,6 +83,7 @@ export function EnveloppeForm({ id, initial, demarches, autres, onSaved, onCance
             {d.libelle} <span className="muted">n° {d.numero}</span>
           </label>
         ))}
+        {!choisies.length && <p className="field__hint">Cochez au moins une démarche pour pouvoir enregistrer.</p>}
       </fieldset>
       <div className="field">
         <span className="field__label">Programme</span>

@@ -1,28 +1,55 @@
 {
   "numero": 154701,
   "libelle": "Subventions (modèle back kanban)",
-  "mutations": false,
+  "mutations": true,
   "delaiCibleJours": 45,
   "champs": {
     "objet": {
       "id": "Q2hhbXAtMjM2MzQwMg==",
       "libelle": "Titre du projet"
     },
-    "montantDemande": {
-      "id": "Q2hhbXAtMjQxOTcwOQ==",
-      "libelle": "demander une subvention de › Montant (€)"
-    }
+    "montantDemande": null
   },
   "finances": {
     "millesime": {
       "source": "anneeDepot"
     },
-    "coutTotal": null,
-    "planFinancement": null,
+    "coutTotal": {
+      "id": "Q2hhbXAtNzA5MjkyMQ==",
+      "libelle": "Montant total du projet"
+    },
+    "planFinancement": {
+      "bloc": {
+        "id": "Q2hhbXAtMjQxOTcwOA==",
+        "libelle": "demander une subvention de"
+      },
+      "financeur": {
+        "id": "Q2hhbXAtNzA5MjkyMg==",
+        "libelle": "demander une subvention de › Financeurs"
+      },
+      "montant": {
+        "id": "Q2hhbXAtMjQxOTcwOQ==",
+        "libelle": "demander une subvention de › Montant (€)"
+      },
+      "statut": {
+        "id": "Q2hhbXAtNzA5MzAzNw==",
+        "libelle": "demander une subvention de › Choix simple"
+      },
+      "annee": {
+        "id": "Q2hhbXAtMjQxOTcxMA==",
+        "libelle": "demander une subvention de › Au titre de l'année ou exercice"
+      },
+      "financeursPublics": [
+        "Etat"
+      ]
+    },
     "programmeSouhaite": null,
-    "tauxMaxAidesPubliques": null,
-    "motifRepartition": null,
+    "tauxMaxAidesPubliques": 80,
+    "motifRepartition": {
+      "id": "Q2hhbXAtMjYxMDQ0NA==",
+      "libelle": "Commentaires libres"
+    },
     "lignes": []
   },
-  "valideLe": "2026-10-19T09:59:04.374Z"
+  "valideLe": "2026-10-19T12:44:06.113Z"
 }
