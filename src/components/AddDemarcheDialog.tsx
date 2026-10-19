@@ -1,7 +1,6 @@
 // Ajout d'une démarche par son numéro (docs/SPEC-multi-demarches.md § A). Le serveur
-// vérifie l'accès du jeton ; rien n'est déclaré avant la confirmation de l'agent. La
-// démarche est déclarée en lecture seule, avec les réglages par défaut.
-// À l'étape B, la fiche de paramétrage pré-remplie remplacera cette confirmation.
+// vérifie l'accès du jeton, puis la fiche de paramétrage s'ouvre pré-remplie (§ B) :
+// rien n'est déclaré avant son enregistrement.
 import { useEffect, useRef, useState } from "react";
 import { DEMARCHE_STATES } from "../board.ts";
 
@@ -10,10 +9,11 @@ type Checked = { number: number; title: string; state: string; declaree: boolean
 type Props = {
   open: boolean;
   onClose: () => void;
-  onAdded: (numero: number) => void;
+  // Démarche déjà déclarée : ouvrir son kanban ; sinon : ouvrir sa fiche de paramétrage.
+  onOpen: (numero: number, declaree: boolean) => void;
 };
 
-export function AddDemarcheDialog({ open, onClose, onAdded }: Props) {
+export function AddDemarcheDialog({ open, onClose, onOpen }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [numero, setNumero] = useState("");
   const [checked, setChecked] = useState<Checked | null>(null);
@@ -43,31 +43,6 @@ export function AddDemarcheDialog({ open, onClose, onAdded }: Props) {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `Erreur ${res.status}`);
       setChecked(body);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function declare() {
-    if (!checked) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/demarches/${checked.number}/parametres`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          libelle: checked.title.slice(0, 120),
-          mutations: false,
-          delaiCibleJours: 45,
-          champs: { objet: null, montantDemande: null },
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? `Erreur ${res.status}`);
-      onAdded(checked.number);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -105,19 +80,17 @@ export function AddDemarcheDialog({ open, onClose, onAdded }: Props) {
             <p>
               {checked.declaree
                 ? "Cette démarche est déjà déclarée dans le back office."
-                : "Le jeton y a accès. Elle sera ajoutée en lecture seule : les changements d'état s'autorisent ensuite dans ses paramètres."}
+                : "Le jeton y a accès. La fiche de paramétrage va s'ouvrir, pré-remplie : la démarche ne sera ajoutée qu'à son enregistrement."}
             </p>
           </div>
         )}
 
         <div className="dialog__actions">
           <button type="button" className="btn btn--secondary" onClick={onClose} disabled={busy}>Annuler</button>
-          {checked && !checked.declaree ? (
-            <button type="button" className="btn btn--primary" onClick={declare} disabled={busy}>
-              {busy ? "Enregistrement…" : "Ajouter cette démarche"}
+          {checked ? (
+            <button type="button" className="btn btn--primary" onClick={() => onOpen(checked.number, checked.declaree)}>
+              {checked.declaree ? "Ouvrir son kanban" : "Paramétrer cette démarche"}
             </button>
-          ) : checked?.declaree ? (
-            <button type="button" className="btn btn--primary" onClick={() => onAdded(checked.number)}>Ouvrir son kanban</button>
           ) : (
             <button type="submit" className="btn btn--primary" disabled={busy || !numero}>
               {busy ? "Vérification…" : "Vérifier l'accès"}

@@ -29,10 +29,14 @@ chaque étape).
 Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
 
 - **A (en test)** : accueil avec une carte par démarche déclarée, kanban et fiche par
-  démarche, ajout d'une démarche par son numéro (accès vérifié par le serveur, déclarée
-  en lecture seule), page Paramètres en lecture seule. Réglage `mutations` par démarche,
-  en plus de `DN_ENABLE_MUTATIONS`.
-- **B, C, D** : à faire, chacune après validation de la précédente.
+  démarche, ajout d'une démarche par son numéro (accès vérifié par le serveur). Réglage
+  `mutations` par démarche, en plus de `DN_ENABLE_MUTATIONS`.
+- **B (en test)** : fiche de paramétrage (`/demarches/:numero/parametres`), pré-remplie
+  par des propositions avec leur raison, ouverte aussi à l'ajout d'une démarche (rien
+  n'est déclaré avant l'enregistrement). Vocabulaire financier générique : millésime,
+  lignes de financement (programme, montants demandé et accordé, assiette, taux, taux
+  maximal, n° d'EJ).
+- **C (C1 puis C2), D** : à faire, chacune après validation de la précédente.
 
 ## Stack
 
@@ -50,8 +54,10 @@ Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
   chiffres sont en `tabular-nums`.
 - `config/demarches/<numéro>.json` (versionné, sans secret) : une fiche par démarche
   déclarée (libellé court, réglage `mutations`, délai cible, champs « objet » et
-  « montant demandé » désignés par leur identifiant de descripteur). Écrite uniquement
-  par le serveur (`PUT /api/demarches/:numero/parametres`, entrée validée).
+  « montant demandé », données financières), les champs étant désignés par leur
+  identifiant de descripteur. Écrite uniquement par le serveur
+  (`PUT /api/demarches/:numero/parametres`) : il relit la révision publiée sur DN, vérifie
+  que chaque champ existe et a un type accepté pour son rôle, et reprend son libellé.
 
 ## Configuration (`.env`, jamais commité)
 
@@ -108,14 +114,18 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
 
 - `server/dn.ts` : client GraphQL (seul fichier qui lit le jeton) et requêtes.
 - `server/index.ts` : serveur Hono sur `127.0.0.1:8787`. Toute route d'une démarche non
-  déclarée répond 404, sauf `verifier` et la création par `PUT parametres` :
+  déclarée répond 404, sauf `verifier`, `proposition` et la création par `PUT parametres` :
   - `GET /api/demarches` (résumé par démarche ; `?resume=0` : liste seule, sans appel à DN) ;
   - `GET /api/demarches/:numero` (démarche et descripteurs de champs), `…/kanban`,
     `…/dossiers/:n`, `…/parametres` ; `PUT …/parametres` ; `GET …/verifier` ;
+  - `GET /api/demarches/:numero/proposition` (candidats par rôle, paramétrage proposé et
+    ses raisons, fiche actuelle, champs disparus de la révision) ;
   - `POST /api/demarches/:numero/dossiers/:n/state` (désactivée par défaut) ;
   - `GET /api/dossiers/:n/demarche`, pour rediriger les anciennes adresses `/dossiers/:n`.
 - `server/config.ts` : lecture, validation et écriture des fiches de `config/demarches/`,
   migration depuis l'ancienne configuration à une démarche.
+- `server/parametrage.ts` : rôles de la fiche (types acceptés, mots-clés), propositions
+  automatiques, champs désignés introuvables dans la révision publiée.
 - `server/kanban.ts` : requête et mise en forme des cartes du kanban, résumé de l'accueil.
 - `src/` : front React. Vite (port 5173) transmet `/api` au serveur Hono.
   Pages : accueil (`/`, `src/pages/Home.tsx`), kanban et vue Liste (`/demarches/:numero`),
@@ -153,6 +163,12 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   found »), comme pour une démarche inexistante.
 - `IntegerNumberChamp.value` est un `BigInt`, transmis en chaîne : le convertir avec `Number`.
   `DecimalNumberChamp.value` est un `Float`. Les annotations privées utilisent les mêmes types.
+- Un champ d'un bloc répétable (`RepetitionChamp.rows[].champs`) peut être désigné dans la
+  fiche (rôles numériques du formulaire) : sa valeur est la somme des lignes renseignées.
+  C'est le cas du montant demandé de la démarche 154701.
+- DN a un type `EngagementJuridiqueChampDescriptor` (champ `engagementJuridique { montantEngage
+  montantPaye }`) : il est accepté pour le n° d'EJ, en plus des annotations texte.
+- Une liste déroulante n'est proposée comme millésime que si toutes ses options sont des années.
 - Champs Carte : demander `geometry { type coordinates }` (du GeoJSON). Ils sont affichés
   avec Leaflet sur le fond Plan IGN de la Géoplateforme, public et sans clé.
 

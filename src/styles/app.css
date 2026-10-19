@@ -198,6 +198,27 @@ button { font: inherit; color: inherit; }
 .page h1 { margin: 8px 0 12px; font-size: 24px; }
 .back { display: inline-flex; align-items: center; min-height: var(--target-min); font-weight: 600; text-decoration: none; }
 
+/* Fiche de paramétrage (docs/SPEC-multi-demarches.md § B) */
+.settings { display: flex; flex-direction: column; gap: 16px; }
+.settings .notice { margin: 0; }
+.settings__section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.settings__section h2 { margin: 0; font-size: 18px; }
+.settings__section h3 { margin: 8px 0 0; font-size: 15px; }
+.settings__section > p { margin: 0; }
+.settings__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 14px; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label, .field__label { font-weight: 600; font-size: 15px; }
+.field select.input { max-width: 100%; }
+.field__hint { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.field__bad { color: var(--bad); font-weight: 600; }
+.input--short { max-width: 10em; }
+.choices { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.choices label, .check { display: inline-flex; align-items: center; gap: 8px; min-height: var(--target-min); font-weight: 400; }
+.ligne { margin: 0; border: 1px solid var(--line); border-radius: var(--radius-card); padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 12px; background: var(--paper); }
+.ligne legend { padding: 0 6px; font-weight: 700; }
+.ligne > .btn { align-self: flex-start; }
+.settings__section > .btn { align-self: flex-start; }
+
 /* Vue liste */
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-column); }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -219,6 +240,9 @@ button { font: inherit; color: inherit; }
 .transitions code { font-family: var(--font-mono); color: var(--admin); }
 
 .notice { margin: 0 32px 16px; padding: 12px 14px; border-radius: var(--radius-button); background: var(--bad-soft); color: var(--bad); }
+.notice--warn { background: var(--warn-soft); color: var(--warn); }
+.notice--info { background: var(--admin-soft); color: var(--ink); }
+.notice--warn a { color: inherit; font-weight: 600; }
 .muted { color: var(--muted); }
 
 /* Petits écrans (critère : utilisable à 390 px) */

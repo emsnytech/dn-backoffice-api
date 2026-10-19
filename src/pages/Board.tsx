@@ -164,6 +164,13 @@ export function Board({ numero }: { numero: string }) {
       </header>
 
       {kanban.error && <p className="notice" role="alert">{kanban.error}</p>}
+      {k && k.champsIntrouvables.length > 0 && (
+        <p className="notice notice--warn" role="alert">
+          Champ introuvable dans la révision publiée :{" "}
+          {k.champsIntrouvables.map((c) => `${c.role} (« ${c.libelle} »)`).join(", ")}. Les valeurs concernées ne sont pas affichées.{" "}
+          <Link to={`${demarchePath(numero)}/parametres`}>Corriger le paramétrage</Link>
+        </p>
+      )}
       {toast && (
         <div className="toast" role="status">
           <span>{toast}</span>

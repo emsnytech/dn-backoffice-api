@@ -15,9 +15,9 @@ import {
   fetchDossierDemarche,
 } from "./dn.ts";
 import { demandeur, fetchKanban, fetchSummary } from "./kanban.ts";
+import { introuvables, proposition } from "./parametrage.ts";
 import {
   ConfigError,
-  defaultConfig,
   getConfig,
   isNumero,
   listConfigs,
@@ -40,7 +40,17 @@ app.onError((err, c) => {
 const requireJson = (c: Context) =>
   c.req.header("content-type")?.startsWith("application/json") ? null : c.json({ error: "Content-Type application/json attendu" }, 415);
 
-// Toute route d'une démarche non déclarée répond 404 (sauf verifier et parametres en PUT).
+// Démarche complète (révision publiée comprise), ou réponse d'erreur avec le message de DN.
+async function demarcheOrError(c: Context, numero: number) {
+  try {
+    return { demarche: await fetchDemarche(numero) };
+  } catch (e: any) {
+    if (!e.code || !e.dnMessage) throw e;
+    return { error: c.json({ error: e.dnMessage, code: e.code }, e.code === "not_found" ? 404 : 403) };
+  }
+}
+
+// Toute route d'une démarche non déclarée répond 404 (sauf verifier, proposition et parametres en PUT).
 async function declared(c: Context<Env>, next: Next) {
   const config = await getConfig(Number(c.req.param("numero")));
   if (!config) return c.json({ error: "Démarche non déclarée dans ce back office" }, 404);
@@ -84,17 +94,45 @@ app.get("/demarches/:numero{[0-9]+}/kanban", declared, async (c) => c.json(await
 
 app.get("/demarches/:numero{[0-9]+}/parametres", declared, (c) => c.json(c.get("config")));
 
-// Déclare ou modifie une démarche. Le serveur revérifie l'accès du jeton avant d'écrire.
+// Fiche de paramétrage (§ B), déclarée ou non : champs candidats par rôle, paramétrage
+// proposé avec ses raisons (jamais enregistré ici), fiche actuelle et champs disparus.
+app.get("/demarches/:numero{[0-9]+}/proposition", async (c) => {
+  const numero = Number(c.req.param("numero"));
+  if (!isNumero(numero)) return c.json({ error: "Numéro invalide" }, 400);
+  const { demarche, error } = await demarcheOrError(c, numero);
+  if (error) return error;
+  const actuel = await getConfig(numero);
+  const rev = demarche.activeRevision;
+  return c.json({
+    demarche: {
+      number: demarche.number,
+      title: demarche.title,
+      state: demarche.state,
+      datePublication: rev.datePublication,
+      nbChamps: rev.champDescriptors.length,
+      nbAnnotations: rev.annotationDescriptors.length,
+      // Page d'administration de la démarche dans DN, pour y ajouter une annotation.
+      dnAdminUrl: `${DN_WEB_ORIGIN}/admin/procedures/${numero}`,
+    },
+    mutationsGlobal: MUTATIONS_ENABLED,
+    ...proposition(demarche),
+    actuel,
+    introuvables: actuel ? introuvables(actuel, rev) : [],
+  });
+});
+
+// Déclare ou modifie une démarche. Le serveur relit la démarche sur DN avant d'écrire :
+// accès du jeton, et champs désignés présents dans la révision publiée avec le bon type.
 app.put("/demarches/:numero{[0-9]+}/parametres", async (c) => {
   const notJson = requireJson(c);
   if (notJson) return notJson;
   const numero = Number(c.req.param("numero"));
   if (!isNumero(numero)) return c.json({ error: "Numéro invalide" }, 400);
-  const access = await checkDemarche(numero);
-  if (!access.ok) return c.json({ error: access.message }, access.code === "not_found" ? 404 : 403);
+  const { demarche, error } = await demarcheOrError(c, numero);
+  if (error) return error;
   const previous = await getConfig(numero);
   try {
-    const config = parseConfig(numero, await c.req.json(), previous ?? defaultConfig(numero, access.demarche.title));
+    const config = parseConfig(numero, await c.req.json(), demarche.activeRevision);
     await saveConfig(config);
     console.log(`Paramétrage de la démarche ${numero} ${previous ? "modifié" : "créé"}`);
     return c.json(config, previous ? 200 : 201);

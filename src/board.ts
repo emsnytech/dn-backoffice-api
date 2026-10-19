@@ -26,6 +26,8 @@ export type Kanban = {
   mutationsGlobal: boolean;
   mutationsDemarche: boolean;
   delaiCibleJours: number;
+  // Champs du paramétrage absents de la révision publiée (docs/SPEC-multi-demarches.md § B).
+  champsIntrouvables: { role: string; libelle: string }[];
   syncedAt: string;
   dossiers: Card[];
 };

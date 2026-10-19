@@ -2,12 +2,17 @@
 // Le serveur réduit chaque dossier aux seules informations affichées sur une carte.
 import { MUTATIONS_ENABLED, gql } from "./dn.ts";
 import type { ChampRef, DemarcheConfig } from "./config.ts";
+import { introuvables } from "./parametrage.ts";
+
+const NUMBER_VALUE = `... on DecimalNumberChamp { value } ... on IntegerNumberChamp { value }`;
+const REVISION_IDS = `__typename id label ... on RepetitionChampDescriptor { champDescriptors { __typename id label } }`;
 
 const KANBAN_QUERY = `
   query getKanban($number: Int!, $after: String) {
     demarche(number: $number) {
       number title state
       groupeInstructeurs { instructeurs { id email } }
+      activeRevision { champDescriptors { ${REVISION_IDS} } annotationDescriptors { ${REVISION_IDS} } }
       dossiers(first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -27,8 +32,8 @@ const KANBAN_QUERY = `
           champs {
             __typename id champDescriptorId label stringValue
             ... on PieceJustificativeChamp { files { filename } }
-            ... on DecimalNumberChamp { value }
-            ... on IntegerNumberChamp { value }
+            ${NUMBER_VALUE}
+            ... on RepetitionChamp { rows { champs { champDescriptorId ${NUMBER_VALUE} } } }
           }
         }
       }
@@ -59,9 +64,22 @@ function toNumber(value: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Valeur numérique d'un champ désigné. Un champ d'un bloc répétable vaut la somme de ses
+// lignes renseignées (null si aucune ne l'est).
+function numberValue(champs: any[], ref: ChampRef | null) {
+  if (!ref) return null;
+  const top = findChamp(champs, ref);
+  if (top) return toNumber(top.value);
+  const values = champs
+    .filter((c) => c.__typename === "RepetitionChamp")
+    .flatMap((c) => c.rows.flatMap((r: any) => r.champs.filter((x: any) => x.champDescriptorId === ref.id)))
+    .map((x: any) => toNumber(x.value))
+    .filter((n: number | null): n is number => n !== null);
+  return values.length ? values.reduce((a: number, b: number) => a + b, 0) : null;
+}
+
 function toCard(d: any, config: DemarcheConfig) {
   const objet = findChamp(d.champs, config.champs.objet);
-  const montant = findChamp(d.champs, config.champs.montantDemande);
   const pj = d.champs.filter((c: any) => c.__typename === "PieceJustificativeChamp");
   return {
     number: d.number,
@@ -71,7 +89,7 @@ function toCard(d: any, config: DemarcheConfig) {
     dateTraitement: d.dateTraitement,
     demandeur: demandeur(d.demandeur),
     objet: objet?.stringValue || null,
-    montant: montant ? toNumber(montant.value) : null,
+    montant: numberValue(d.champs, config.champs.montantDemande),
     instructeurs: d.instructeurs,
     messages: d.messages.length,
     avisDemandes: d.avis.filter((a: any) => !a.reponse).length,
@@ -106,6 +124,8 @@ export async function fetchKanban(config: DemarcheConfig) {
     mutationsGlobal: MUTATIONS_ENABLED,
     mutationsDemarche: config.mutations,
     delaiCibleJours: config.delaiCibleJours,
+    // Champs du paramétrage absents de la révision publiée (alerte au-dessus du tableau).
+    champsIntrouvables: introuvables(config, demarche.activeRevision),
     syncedAt: new Date().toISOString(),
     dossiers: nodes.map((d) => toCard(d, config)),
   };

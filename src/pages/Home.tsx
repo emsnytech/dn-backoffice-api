@@ -81,9 +81,9 @@ export function Home() {
       <AddDemarcheDialog
         open={adding}
         onClose={() => setAdding(false)}
-        onAdded={(numero) => {
+        onOpen={(numero, declaree) => {
           setAdding(false);
-          navigate(demarchePath(numero));
+          navigate(declaree ? demarchePath(numero) : `${demarchePath(numero)}/parametres`);
         }}
       />
     </>
