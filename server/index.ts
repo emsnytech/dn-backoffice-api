@@ -17,6 +17,7 @@ import {
 } from "./dn.ts";
 import { demandeur, fetchDemarcheDossiers, fetchKanban, fetchSummary } from "./kanban.ts";
 import { computeDossier } from "./finances.ts";
+import { aidesSiret, normaliserSiret } from "./aides.ts";
 import { DecisionError, appliquerDecision, vueDecision } from "./decision.ts";
 import {
   computeEnveloppes,
@@ -176,6 +177,17 @@ app.get("/demarches/:numero{[0-9]+}/dossiers/:number{[0-9]+}", declared, async (
     // Page instructeur du dossier dans DN (le numéro de démarche est l'identifiant de procédure).
     dnUrl: `${DN_WEB_ORIGIN}/procedures/${numero}/dossiers/${dossier.number}`,
   });
+});
+
+// Aides déjà accordées au SIRET du dossier (C3), chargées à part pour ne pas ralentir la fiche.
+app.get("/demarches/:numero{[0-9]+}/dossiers/:number{[0-9]+}/aides-siret", declared, async (c) => {
+  const { numero } = c.get("config");
+  const number = Number(c.req.param("number"));
+  const dossier = await fetchDossier(numero, number);
+  if (!dossier) return c.json({ error: "Dossier introuvable dans cette démarche" }, 404);
+  const siret = normaliserSiret(dossier.demandeur?.siret);
+  if (!siret) return c.json({ siret: null });
+  return c.json(await aidesSiret(siret, { demarche: numero, number }));
 });
 
 // --- Enveloppes (§ C) --------------------------------------------------------

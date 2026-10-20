@@ -51,7 +51,10 @@ Chantier multi-démarches (`docs/SPEC-multi-demarches.md`) :
   sous-champs du bloc désignés, relecture avant écriture (409 si une valeur a changé dans DN),
   confirmation ancienne → nouvelle valeur, ajout d'une ligne en deux temps, journal
   `logs/annotations.log`. Activé sur la 154701 uniquement.
-- **C3, D** : à faire, chacune après validation de la précédente.
+- **C3 (en test)** : encadré « Aides déjà accordées à ce SIRET » dans l'onglet Demande : dossiers
+  acceptés du même SIRET dans toutes les démarches déclarées, traités depuis moins de trois ans
+  (glissants), avec leur montant accordé (bloc de décision). Dossier consulté exclu. Lecture seule.
+- **D** : à faire, après validation de C3.
 
 ## Stack
 
@@ -143,6 +146,7 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
     ses raisons, fiche actuelle, champs disparus de la révision) ;
   - `POST /api/demarches/:numero/dossiers/:n/state` (désactivée par défaut) ;
   - `POST /api/demarches/:numero/dossiers/:n/decision` (bloc de décision ; désactivée par défaut) ;
+  - `GET /api/demarches/:numero/dossiers/:n/aides-siret` (aides déjà accordées au SIRET, C3) ;
   - `GET /api/dossiers/:n/demarche`, pour rediriger les anciennes adresses `/dossiers/:n` ;
   - `GET /api/enveloppes` (avec indicateurs), `POST` ; `GET`, `PUT`, `DELETE /api/enveloppes/:id` ;
     `GET /api/enveloppes/programmes?demarches=…` (liste fermée des régimes d'aide) ;
@@ -156,6 +160,8 @@ normalement. Pour vérifier que le jeton est chargé, `npm run fetch` suffit.
   anomalies), en centimes.
 - `server/decision.ts` : vue du bloc de décision d'un dossier (identifiants des champs) et
   saisie (validation, relecture avant écriture, ajout d'une ligne en deux temps).
+- `server/aides.ts` : aides déjà accordées à un SIRET (dossiers acceptés de toutes les démarches
+  déclarées, filtre DN `state: accepte`, trois ans glissants).
 - `server/enveloppes.ts` : lecture, validation et écriture de `config/enveloppes/`,
   imputation des dossiers et indicateurs par enveloppe.
 - `server/kanban.ts` : requête et mise en forme des cartes du kanban, résumé de l'accueil.

@@ -8,6 +8,7 @@ import { GeoMap } from "../GeoMap.tsx";
 import { MessageBody } from "../components/MessageBody.tsx";
 import { Financement } from "../components/Financement.tsx";
 import { DecisionEditor } from "../components/DecisionEditor.tsx";
+import { AidesSiret } from "../components/AidesSiret.tsx";
 import { EVENTS, StateBadge, formatDate } from "../format.tsx";
 import { age, demarchePath, dossierPath, formatMontant, type Card, type Kanban } from "../board.ts";
 import { TRANSITIONS, type DossierState } from "../../shared/transitions.ts";
@@ -316,6 +317,7 @@ export function DossierDetail() {
                     <DecisionEditor numero={numero} number={d.number} state={d.state} decision={d.decision} dnUrl={d.dnUrl}
                       onSaved={onWritten} onReload={dossier.reload} />
                   )}
+                  {d.demandeur?.siret && <AidesSiret key={`${numero}-${d.number}-${version}`} numero={numero} number={d.number} />}
                   <section>
                     <h2>Champs du formulaire</h2>
                     <Champs champs={champs} descriptors={rev.champDescriptors} />

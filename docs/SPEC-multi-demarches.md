@@ -500,6 +500,13 @@ assiette, referenceEngagement } | null }`.
 - **C3** (après C1) : encadré **« Aides déjà accordées à ce SIRET »** dans la fiche dossier :
   dossiers acceptés du même SIRET dans toutes les démarches déclarées, sur les trois dernières
   années, avec leurs montants accordés.
+  Précisions (C3) : trois ans glissants à compter du jour, sur la date de traitement ; le dossier
+  consulté est exclu ; SIRET comparé sans les espaces ; montant accordé = lignes « accepté » du bloc
+  de décision (« non renseigné » sans bloc ou sans ligne, repère « à vérifier » si le calcul du
+  dossier a une anomalie grave) ; total des seuls montants renseignés, avec le nombre de dossiers
+  sans montant. Encadré chargé après la fiche (`GET …/dossiers/:n/aides-siret`, filtre DN
+  `state: accepte`), masqué pour une personne physique ; une démarche inaccessible est signalée
+  sans bloquer les autres. Pas de stockage : chaque ouverture relit les dossiers acceptés.
 
 Validation de l'utilisateur entre chaque livraison.
 

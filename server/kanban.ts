@@ -8,7 +8,7 @@ import { computeDossier } from "./finances.ts";
 // Deux types différents ne peuvent pas partager le nom de champ value : alias distincts.
 const NUMBER_VALUE = `... on DecimalNumberChamp { decimalValue: value } ... on IntegerNumberChamp { integerValue: value }`;
 // Champs et annotations avec leurs valeurs, lignes des blocs répétables comprises (§ B et § C).
-const VALUES = `
+export const VALUES = `
   __typename id champDescriptorId label stringValue
   ${NUMBER_VALUE}
   ... on RepetitionChamp { rows { champs { __typename champDescriptorId stringValue ${NUMBER_VALUE} } } }`;
